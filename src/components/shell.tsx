@@ -105,16 +105,16 @@ export function Shell({
 
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r bg-card transition-transform md:static md:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-hairline bg-card transition-transform md:static md:translate-x-0',
           open ? 'translate-x-0' : '-translate-x-full',
         )}
       >
-        <div className="flex h-16 items-center justify-between border-b px-6">
-          <Link href={brandHref} className="flex items-center gap-2 font-bold">
-            <span className="grid h-7 w-7 place-items-center rounded-md bg-primary text-sm text-primary-foreground">
+        <div className="flex h-16 items-center justify-between border-b border-hairline px-5">
+          <Link href={brandHref} className="flex items-center gap-2.5">
+            <span className="grid h-6 w-6 place-items-center border border-foreground bg-foreground font-display text-xs font-semibold text-background">
               M
             </span>
-            {brand}
+            <span className="font-display text-[13px] font-semibold tracking-tight">{brand}</span>
           </Link>
           <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setOpen(false)}>
             <X className="h-4 w-4" />
@@ -131,12 +131,15 @@ export function Shell({
                 href={item.href}
                 onClick={() => setOpen(false)}
                 className={cn(
-                  'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                  'relative flex items-center gap-3 rounded-sm px-3 py-2 text-sm font-medium transition-colors',
                   active
-                    ? 'bg-primary/10 text-primary'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                 )}
               >
+                {active && (
+                  <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 bg-electric" aria-hidden="true" />
+                )}
                 <Icon className="h-4 w-4" />
                 {item.label}
               </Link>
@@ -146,7 +149,7 @@ export function Shell({
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b bg-background/80 px-4 backdrop-blur md:px-6">
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between gap-4 border-b border-hairline bg-background/80 px-4 backdrop-blur md:px-6">
           <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>
@@ -162,7 +165,7 @@ export function Shell({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="gap-2 px-2">
-                  <span className="grid h-7 w-7 place-items-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
+                  <span className="grid h-7 w-7 place-items-center rounded-sm bg-accent text-xs font-semibold text-accent-foreground">
                     {initials}
                   </span>
                   <span className="hidden text-sm sm:inline">{user.email}</span>

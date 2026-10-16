@@ -22,7 +22,7 @@ export function CodeBlock({
   }
 
   return (
-    <div className={cn('overflow-hidden rounded-xl border bg-card', className)}>
+    <div className={cn('overflow-hidden rounded-sm border border-hairline bg-card', className)}>
       <div className="flex items-center justify-between border-b bg-muted/40 px-4 py-2">
         <span className="text-xs font-medium text-muted-foreground">{filename ?? 'shell'}</span>
         <button

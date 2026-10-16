@@ -12,8 +12,8 @@ export const dynamic = 'force-dynamic';
 
 function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
   return (
-    <section id={id} className="scroll-mt-24 border-t pt-10 first:border-t-0 first:pt-0">
-      <h2 className="mb-4 text-2xl font-bold tracking-tight">{title}</h2>
+    <section id={id} className="scroll-mt-24 border-t border-hairline pt-10 first:border-t-0 first:pt-0">
+      <h2 className="mb-4 font-display text-2xl font-semibold tracking-tight">{title}</h2>
       <div className="space-y-4 text-sm leading-relaxed text-muted-foreground [&_strong]:text-foreground">
         {children}
       </div>
@@ -146,7 +146,7 @@ data: [DONE]`;
     <div className="max-w-3xl space-y-10">
       <div>
         <Badge className="mb-3">REST API · OpenAI-compatible</Badge>
-        <h1 className="text-3xl font-bold tracking-tight">Integrasi API</h1>
+        <h1 className="font-display text-3xl font-semibold tracking-tight">Integrasi API</h1>
         <p className="mt-2 text-muted-foreground">
           Panggil Mpruy AI dari aplikasi apa pun yang mendukung OpenAI SDK. Hanya perlu
           ganti <code className="rounded bg-muted px-1.5 py-0.5 text-xs">baseURL</code> dan API key.

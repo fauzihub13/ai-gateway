@@ -59,11 +59,13 @@ export default function RegisterPage() {
           ) : (
             <>
               <CardHeader>
-                <Link href="/" className="mb-2 flex items-center gap-2 font-bold">
-                  <span className="grid h-7 w-7 place-items-center rounded-md bg-primary text-sm text-primary-foreground">
+                <Link href="/" className="mb-3 flex items-center gap-2.5">
+                  <span className="grid h-6 w-6 place-items-center border border-foreground bg-foreground font-display text-xs font-semibold text-background">
                     M
                   </span>
-                  Mpruy AI
+                  <span className="font-display text-[13px] font-semibold tracking-tight">
+                    Mpruy<span className="text-electric">AI</span>
+                  </span>
                 </Link>
                 <CardTitle>Buat akun</CardTitle>
                 <CardDescription>Gratis. Tanpa kartu kredit.</CardDescription>

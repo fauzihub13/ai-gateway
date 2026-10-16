@@ -28,11 +28,11 @@ export function StatCard({
       <CardContent className="flex items-center justify-between p-6">
         <div className="space-y-1">
           <p className="text-sm font-medium text-muted-foreground">{label}</p>
-          <p className="text-2xl font-semibold tracking-tight">{value}</p>
+          <p className="tabular font-display text-2xl font-semibold tracking-tight">{value}</p>
           {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
         </div>
         {Icon && (
-          <div className={cn('grid h-10 w-10 place-items-center rounded-lg', accentClass)}>
+          <div className={cn('grid h-10 w-10 place-items-center rounded-sm', accentClass)}>
             <Icon className="h-5 w-5" />
           </div>
         )}
@@ -53,7 +53,7 @@ export function PageHeader({
   return (
     <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div className="space-y-1">
-        <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+        <h1 className="font-display text-2xl font-semibold tracking-tight">{title}</h1>
         {description && <p className="text-sm text-muted-foreground">{description}</p>}
       </div>
       {children && <div className="flex items-center gap-2">{children}</div>}

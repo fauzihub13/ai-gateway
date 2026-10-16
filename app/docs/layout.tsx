@@ -18,14 +18,16 @@ const nav = [
 export default function DocsLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur">
+      <header className="sticky top-0 z-30 border-b border-hairline bg-background/85 backdrop-blur">
         <div className="container flex h-16 items-center justify-between">
-          <Link href="/" className="flex items-center gap-2 font-bold">
-            <span className="grid h-7 w-7 place-items-center rounded-md bg-primary text-sm text-primary-foreground">
+          <Link href="/" className="flex items-center gap-2.5">
+            <span className="grid h-6 w-6 place-items-center border border-foreground bg-foreground font-display text-xs font-semibold text-background">
               M
             </span>
-            Mpruy AI
-            <span className="ml-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+            <span className="font-display text-[13px] font-semibold tracking-tight">
+              Mpruy<span className="text-electric">AI</span>
+            </span>
+            <span className="ml-1 rounded-sm border border-hairline px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
               Docs
             </span>
           </Link>

@@ -2,58 +2,86 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Mpruy AI — "Making Software" editorial design system
+ * Palette: electric blue #1E4DFF, black ink, hairline #E5E7EB, off-white #FBFBFB.
+ * Converted to HSL channel triplets for Tailwind/shadcn tokens.
+ */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
+    --background: 0 0% 98.4%; /* #FBFBFB */
+    --foreground: 0 0% 0%; /* #000000 */
+    --card: 0 0% 100%; /* #FFFFFF */
+    --card-foreground: 0 0% 0%;
     --popover: 0 0% 100%;
-    --popover-foreground: 240 10% 3.9%;
-    --primary: 262 83% 58%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 4.8% 95.9%;
-    --secondary-foreground: 240 5.9% 10%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --success: 142 71% 45%;
-    --success-foreground: 0 0% 98%;
-    --warning: 38 92% 50%;
-    --warning-foreground: 0 0% 98%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 262 83% 58%;
-    --radius: 0.6rem;
+    --popover-foreground: 0 0% 0%;
+
+    --primary: 228 100% 56%; /* #1E4DFF */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 220 33% 97%;
+    --secondary-foreground: 0 0% 8%;
+
+    --muted: 220 27% 96%;
+    --muted-foreground: 220 9% 42%;
+
+    --accent: 226 100% 96%;
+    --accent-foreground: 228 92% 40%;
+
+    --destructive: 4 74% 49%; /* #D92D20 */
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 155 55% 34%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 32 88% 42%;
+    --warning-foreground: 0 0% 100%;
+
+    --border: 220 13% 91%; /* #E5E7EB */
+    --input: 220 13% 88%;
+    --ring: 228 100% 56%;
+
+    /* Making Software accent tokens */
+    --ink: 0 0% 0%;
+    --electric: 228 100% 56%; /* #1E4DFF */
+    --electric-soft: 227 100% 68%; /* #5D7FFF */
+    --electric-pale: 226 100% 93%; /* #D9E2FF */
+    --hairline: 220 13% 91%; /* #E5E7EB */
+
+    --radius: 0.25rem;
   }
 
+  /* Dark tokens kept for completeness; the product is light-first. */
   .dark {
-    --background: 240 10% 3.9%;
+    --background: 220 30% 4%;
     --foreground: 0 0% 98%;
-    --card: 240 10% 5.5%;
+    --card: 220 26% 6%;
     --card-foreground: 0 0% 98%;
-    --popover: 240 10% 5.5%;
+    --popover: 220 26% 6%;
     --popover-foreground: 0 0% 98%;
-    --primary: 263 70% 62%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 240 3.7% 15.9%;
+    --primary: 227 100% 68%;
+    --primary-foreground: 220 30% 4%;
+    --secondary: 220 20% 12%;
     --secondary-foreground: 0 0% 98%;
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
-    --accent: 240 3.7% 15.9%;
-    --accent-foreground: 0 0% 98%;
-    --destructive: 0 62.8% 45%;
-    --destructive-foreground: 0 0% 98%;
-    --success: 142 60% 45%;
-    --success-foreground: 0 0% 98%;
-    --warning: 38 85% 50%;
-    --warning-foreground: 0 0% 98%;
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 263 70% 62%;
+    --muted: 220 20% 12%;
+    --muted-foreground: 220 12% 64%;
+    --accent: 224 40% 16%;
+    --accent-foreground: 226 100% 88%;
+    --destructive: 4 70% 52%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 155 45% 46%;
+    --success-foreground: 0 0% 100%;
+    --warning: 32 80% 50%;
+    --warning-foreground: 0 0% 100%;
+    --border: 220 18% 16%;
+    --input: 220 18% 18%;
+    --ring: 227 100% 68%;
+
+    --ink: 0 0% 100%;
+    --electric: 227 100% 68%;
+    --electric-soft: 227 100% 76%;
+    --electric-pale: 226 45% 20%;
+    --hairline: 220 18% 16%;
   }
 }
 
@@ -61,9 +89,55 @@
   * {
     @apply border-border;
   }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
-    font-feature-settings: 'rlig' 1, 'calt' 1;
+    font-feature-settings: 'rlig' 1, 'calt' 1, 'ss01' 1;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: hsl(var(--electric) / 0.16);
+    color: hsl(var(--ink));
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--electric));
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* Technical eyebrow / annotation label */
+  .tech-label {
+    @apply font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground;
+  }
+
+  /* Editorial long-form reading text */
+  .reading {
+    @apply font-reading text-[1.0625rem] leading-[1.75] text-muted-foreground;
+  }
+
+  /* Thin horizontal rule used as section separator */
+  .rule {
+    @apply border-t border-hairline;
+  }
+
+  /* Blueprint canvas: faint coordinate grid on off-white */
+  .grid-canvas {
+    background-image: theme('backgroundImage.blueprint-grid');
+    background-size: theme('backgroundSize.grid');
+    -webkit-mask-image: radial-gradient(ellipse 80% 70% at 60% 40%, #000 35%, transparent 100%);
+    mask-image: radial-gradient(ellipse 80% 70% at 60% 40%, #000 35%, transparent 100%);
+  }
+
+  /* Small square corner-tick used on blueprint panels */
+  .tick-corner {
+    @apply pointer-events-none absolute h-2 w-2 border-electric/70;
   }
 }
 
@@ -74,5 +148,34 @@
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
     @apply rounded-full bg-border;
+  }
+
+  /* Animated editorial underline for links */
+  .link-rule {
+    @apply relative inline-flex items-center gap-1;
+    background-image: linear-gradient(hsl(var(--electric)), hsl(var(--electric)));
+    background-position: 0 100%;
+    background-repeat: no-repeat;
+    background-size: 0% 1px;
+    transition: background-size 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .link-rule:hover {
+    background-size: 100% 1px;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Respect reduced-motion: kill decorative animation, keep content visible. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }
