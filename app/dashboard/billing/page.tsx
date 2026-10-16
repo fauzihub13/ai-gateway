@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { formatIdr } from '@/lib/utils';
+import { apiFetch } from '@/lib/client';
 
 interface Trx {
   id: string;
@@ -43,11 +44,11 @@ export default function BillingPage() {
   const [loading, setLoading] = useState(false);
 
   function load() {
-    fetch('/api/billing/usage?days=30')
+    apiFetch('/api/billing/usage?days=30')
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d && setBalance(d.balance))
       .catch(() => undefined);
-    fetch('/api/billing/transactions')
+    apiFetch('/api/billing/transactions')
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d && setTxns(d.items))
       .catch(() => undefined);
@@ -59,7 +60,7 @@ export default function BillingPage() {
     setError('');
     setLoading(true);
     try {
-      const res = await fetch('/api/billing/topup', {
+      const res = await apiFetch('/api/billing/topup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCookie('csrf_token') },
         body: JSON.stringify({ amountIdr: amount }),

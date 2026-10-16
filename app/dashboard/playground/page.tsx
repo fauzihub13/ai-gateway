@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { apiFetch } from '@/lib/client';
 
 interface ModelInfo {
   publicName: string;
@@ -31,7 +32,7 @@ export default function PlaygroundPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetch('/api/models')
+    apiFetch('/api/models')
       .then((r) => (r.ok ? r.json() : { models: [] }))
       .then((d) => {
         setModels(d.models ?? []);
@@ -53,7 +54,7 @@ export default function PlaygroundPage() {
     setUsage('');
     setLoading(true);
     try {
-      const res = await fetch('/api/playground/chat', {
+      const res = await apiFetch('/api/playground/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

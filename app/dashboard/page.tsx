@@ -6,6 +6,7 @@ import { PageHeader, StatCard } from '@/components/stat-card';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatIdr, formatNumber } from '@/lib/utils';
+import { apiFetch } from '@/lib/client';
 
 interface Overview {
   balance: number;
@@ -21,8 +22,8 @@ export default function DashboardOverview() {
 
   useEffect(() => {
     Promise.all([
-      fetch('/api/auth/me').then((r) => (r.ok ? r.json() : null)),
-      fetch('/api/billing/usage?days=30').then((r) => (r.ok ? r.json() : null)),
+      apiFetch('/api/auth/me').then((r) => (r.ok ? r.json() : null)),
+      apiFetch('/api/billing/usage?days=30').then((r) => (r.ok ? r.json() : null)),
     ])
       .then(([me, usage]) => {
         if (me) setUser({ email: me.user.email, name: me.user.name, plan: me.plan });

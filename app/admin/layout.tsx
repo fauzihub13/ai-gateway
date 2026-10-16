@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { Shell, type NavItem } from '@/components/shell';
@@ -14,16 +15,22 @@ const items: NavItem[] = [
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
-  const user = session
-    ? await db.user.findUnique({ where: { id: session.sub }, select: { email: true, role: true } })
-    : null;
+  if (!session) redirect('/login?next=/admin');
+  if (session.role !== 'ADMIN') redirect('/dashboard');
+
+  const user = await db.user.findUnique({
+    where: { id: session.sub },
+    select: { email: true, role: true, status: true },
+  });
+
+  if (!user || user.role !== 'ADMIN' || user.status !== 'ACTIVE') redirect('/dashboard');
 
   return (
     <Shell
       brand="Mpruy AI · Admin"
       brandHref="/admin"
       items={items}
-      user={user ? { email: user.email, role: user.role } : null}
+      user={{ email: user.email, role: user.role }}
     >
       {children}
     </Shell>

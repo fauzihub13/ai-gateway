@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Plus, Save, X } from 'lucide-react';
+import { Loader2, Plus, Save, Trash2, X } from 'lucide-react';
 import { PageHeader } from '@/components/stat-card';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -10,6 +10,14 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { formatIdr } from '@/lib/utils';
 
 interface ModelRow {
@@ -48,6 +56,9 @@ export default function AdminModelsPage() {
   const [editing, setEditing] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<ModelRow | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   function load() {
     fetch('/api/admin/models')
@@ -101,6 +112,36 @@ export default function AdminModelsPage() {
       body: JSON.stringify({ publicName: m.publicName, isActive: !m.isActive }),
     });
     load();
+  }
+
+  function requestDelete(m: ModelRow) {
+    setDeleteError('');
+    setDeleteTarget(m);
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      const res = await fetch(`/api/admin/models?publicName=${encodeURIComponent(deleteTarget.publicName)}`, {
+        method: 'DELETE',
+        headers: { 'X-CSRF-Token': getCookie('csrf_token') },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setDeleteError(data?.error?.message ?? 'Gagal menghapus model.');
+        return;
+      }
+      if (editing === deleteTarget.publicName) {
+        setEditing(null);
+        setForm({ ...EMPTY });
+      }
+      setDeleteTarget(null);
+      load();
+    } finally {
+      setDeleting(false);
+    }
   }
 
   return (
@@ -227,6 +268,15 @@ export default function AdminModelsPage() {
                     <Button variant="ghost" size="sm" onClick={() => toggleActive(m)}>
                       {m.isActive ? 'Nonaktifkan' : 'Aktifkan'}
                     </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => requestDelete(m)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Hapus
+                    </Button>
                   </div>
                 </TableCell>
               </TableRow>
@@ -241,6 +291,28 @@ export default function AdminModelsPage() {
           </TableBody>
         </Table>
       </Card>
+
+      <Dialog open={Boolean(deleteTarget)} onOpenChange={(o) => !o && !deleting && setDeleteTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Hapus model?</DialogTitle>
+            <DialogDescription>
+              Model <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{deleteTarget?.publicName}</code> akan dihapus
+              permanen dan dilepas dari semua plan. Tindakan ini tidak bisa dibatalkan.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteError && <p className="text-sm text-destructive">{deleteError}</p>}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)} disabled={deleting}>
+              Batal
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Hapus
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

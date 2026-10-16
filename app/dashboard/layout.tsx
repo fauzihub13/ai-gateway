@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { Shell, type NavItem } from '@/components/shell';
@@ -12,12 +13,17 @@ const items: NavItem[] = [
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
-  const user = session
-    ? await db.user.findUnique({ where: { id: session.sub }, select: { email: true, role: true } })
-    : null;
+  if (!session) redirect('/login?next=/dashboard');
+
+  const user = await db.user.findUnique({
+    where: { id: session.sub },
+    select: { email: true, role: true, status: true },
+  });
+
+  if (!user || user.status === 'DEACTIVATED') redirect('/login?next=/dashboard');
 
   const nav = [...items];
-  if (session?.role === 'ADMIN') {
+  if (session.role === 'ADMIN') {
     nav.push({ href: '/admin', label: 'Admin Panel', icon: 'shield' });
   }
 
@@ -26,7 +32,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       brand="Mpruy AI"
       brandHref="/dashboard"
       items={nav}
-      user={user ? { email: user.email, role: user.role } : null}
+      user={{ email: user.email, role: user.role }}
     >
       {children}
     </Shell>

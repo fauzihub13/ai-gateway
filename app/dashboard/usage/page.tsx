@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatIdr, formatNumber } from '@/lib/utils';
+import { apiFetch } from '@/lib/client';
 
 interface UsageItem {
   key: string;
@@ -24,7 +25,7 @@ export default function UsagePage() {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/billing/usage?days=30&groupBy=${groupBy}`)
+    apiFetch(`/api/billing/usage?days=30&groupBy=${groupBy}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (d) {

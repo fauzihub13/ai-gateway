@@ -17,6 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { apiFetch } from '@/lib/client';
 
 interface ApiKey {
   id: string;
@@ -43,7 +44,7 @@ export default function KeysPage() {
   const [copied, setCopied] = useState(false);
 
   async function load() {
-    const res = await fetch('/api/keys');
+    const res = await apiFetch('/api/keys');
     if (res.ok) setKeys((await res.json()).keys);
   }
 
@@ -56,7 +57,7 @@ export default function KeysPage() {
     setRawKey('');
     setCreating(true);
     try {
-      const res = await fetch('/api/keys', {
+      const res = await apiFetch('/api/keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCookie('csrf_token') },
         body: JSON.stringify({ name }),
@@ -76,7 +77,7 @@ export default function KeysPage() {
 
   async function revoke(id: string) {
     if (!confirm('Revoke key ini? Tindakan tidak bisa dibatalkan.')) return;
-    await fetch(`/api/keys/${id}`, { method: 'DELETE', headers: { 'X-CSRF-Token': getCookie('csrf_token') } });
+    await apiFetch(`/api/keys/${id}`, { method: 'DELETE', headers: { 'X-CSRF-Token': getCookie('csrf_token') } });
     load();
   }
 

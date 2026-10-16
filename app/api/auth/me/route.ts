@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { requireUser } from '@/lib/auth';
+import { requireUser, refreshSessionIfNeeded } from '@/lib/auth';
 import { toErrorResponse } from '@/lib/errors';
 import { getRequestId, json } from '@/lib/http';
 
@@ -9,6 +9,7 @@ export async function GET(req: Request) {
   const requestId = getRequestId(req);
   try {
     const s = await requireUser();
+    await refreshSessionIfNeeded(s).catch(() => undefined);
     const user = await db.user.findUniqueOrThrow({
       where: { id: s.sub },
       include: { plan: true },

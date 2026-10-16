@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { requireAdmin, assertCsrf } from '@/lib/auth';
 import { invalidateModelCache } from '@/lib/model-mapping';
-import { toErrorResponse, BadRequestError, InternalError } from '@/lib/errors';
+import { toErrorResponse, BadRequestError, InternalError, NotFoundError } from '@/lib/errors';
 import { getRequestId, getClientIp, json } from '@/lib/http';
 import { z } from 'zod';
 
@@ -125,6 +125,51 @@ export async function PATCH(req: Request) {
 
     await invalidateModelCache().catch(() => undefined);
     return json({ model: updated }, 200, { 'x-request-id': requestId });
+  } catch (err) {
+    return toErrorResponse(err, requestId);
+  }
+}
+
+export async function DELETE(req: Request) {
+  const requestId = getRequestId(req);
+  try {
+    const admin = await requireAdmin();
+    assertCsrf(req);
+
+    const { searchParams } = new URL(req.url);
+    let publicName = searchParams.get('publicName');
+    if (!publicName) {
+      const body = (await req.json().catch(() => ({}))) as { publicName?: string };
+      publicName = body.publicName ?? null;
+    }
+    if (!publicName) throw new BadRequestError('invalid_request_error', 'publicName is required.');
+
+    const model = await db.model.findUnique({ where: { publicName } });
+    if (!model) throw new NotFoundError('model_not_found', `Model \`${publicName}\` does not exist.`);
+
+    const usageCount = await db.usageLog.count({ where: { modelId: model.id } });
+    if (usageCount > 0) {
+      throw new BadRequestError(
+        'model_in_use',
+        `Model \`${publicName}\` sudah dipakai pada ${usageCount} request. Nonaktifkan saja agar riwayat billing tetap utuh.`,
+      );
+    }
+
+    await db.model.delete({ where: { id: model.id } });
+
+    await db.adminAuditLog.create({
+      data: {
+        adminId: admin.sub,
+        action: 'model.delete',
+        targetType: 'Model',
+        targetId: model.id,
+        metadata: { publicName: model.publicName, internalName: model.internalName },
+        ip: getClientIp(req),
+      },
+    });
+
+    await invalidateModelCache().catch(() => undefined);
+    return json({ ok: true, deleted: model.publicName }, 200, { 'x-request-id': requestId });
   } catch (err) {
     return toErrorResponse(err, requestId);
   }

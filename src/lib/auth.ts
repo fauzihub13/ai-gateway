@@ -4,11 +4,15 @@ import { ForbiddenError, UnauthorizedError } from './errors';
 
 const secret = () => new TextEncoder().encode(process.env.AUTH_JWT_SECRET!);
 
+export const SESSION_TTL_SECONDS = 3600;
+const REFRESH_THRESHOLD = SESSION_TTL_SECONDS / 2;
+
 export interface SessionPayload {
   sub: string;
   role: 'USER' | 'ADMIN';
   sid: string;
   ver: number;
+  exp?: number;
 }
 
 export async function signSession(p: { sub: string; role: string; sid: string; ver: number }): Promise<string> {
@@ -16,13 +20,26 @@ export async function signSession(p: { sub: string; role: string; sid: string; v
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(p.sub)
     .setIssuedAt()
-    .setExpirationTime('1h')
+    .setExpirationTime(`${SESSION_TTL_SECONDS}s`)
     .sign(secret());
 }
 
 export async function verifySessionToken(token: string): Promise<SessionPayload> {
   const { payload } = await jwtVerify(token, secret());
   return payload as unknown as SessionPayload;
+}
+
+/** True bila sesi hampir kedaluwarsa dan sebaiknya diperpanjang (sliding). */
+export function shouldRefreshSession(s: SessionPayload): boolean {
+  if (typeof s.exp !== 'number') return false;
+  return s.exp - Math.floor(Date.now() / 1000) < REFRESH_THRESHOLD;
+}
+
+/** Perpanjang cookie sesi bila mendekati kedaluwarsa. Aman dipanggil di Route Handler. */
+export async function refreshSessionIfNeeded(s: SessionPayload): Promise<void> {
+  if (!shouldRefreshSession(s)) return;
+  const token = await signSession({ sub: s.sub, role: s.role, sid: s.sid, ver: s.ver });
+  setSessionCookie(token, SESSION_TTL_SECONDS);
 }
 
 export const SESSION_COOKIE = 'auth_token';
