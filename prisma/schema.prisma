@@ -1,0 +1,251 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  PENDING_EMAIL
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum KeyScope {
+  FULL
+  MODELS
+}
+
+enum KeyStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum UsageStatus {
+  COMPLETED
+  PARTIAL
+  ERROR
+  REJECTED
+}
+
+enum TrxnStatus {
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+  REFUNDED
+}
+
+enum LedgerReason {
+  TOPUP
+  USAGE
+  REFUND
+  ADJUSTMENT
+}
+
+enum TokenType {
+  EMAIL_VERIFY
+  PASSWORD_RESET
+}
+
+model User {
+  id              String     @id @default(cuid())
+  email           String     @unique
+  passwordHash    String
+  name            String?
+  role            Role       @default(USER)
+  status          UserStatus @default(PENDING_EMAIL)
+  balance         Int        @default(0)
+  sessionVersion  Int        @default(0)
+  planId          String
+  plan            Plan       @relation(fields: [planId], references: [id])
+  emailVerifiedAt DateTime?  @db.Timestamptz
+  lastLoginAt     DateTime?  @db.Timestamptz
+  createdAt       DateTime   @default(now()) @db.Timestamptz
+  updatedAt       DateTime   @updatedAt @db.Timestamptz
+  deletedAt       DateTime?  @db.Timestamptz
+
+  apiKeys      ApiKey[]
+  usageLogs    UsageLog[]
+  transactions Transaction[]
+  ledger       BalanceLedger[]
+  tokens       VerificationToken[]
+  audits       AdminAuditLog[]
+
+  @@index([status])
+  @@index([role])
+}
+
+model ApiKey {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  keyHash         String    @unique
+  prefix          String
+  last4           String
+  scope           KeyScope  @default(FULL)
+  allowedModels   String[]  @default([])
+  rpmLimit        Int?
+  monthlyLimitIdr Int?
+  status          KeyStatus @default(ACTIVE)
+  expiresAt       DateTime? @db.Timestamptz
+  lastUsedAt      DateTime? @db.Timestamptz
+  createdAt       DateTime  @default(now()) @db.Timestamptz
+  revokedAt       DateTime? @db.Timestamptz
+
+  usageLogs UsageLog[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model Model {
+  id               String    @id @default(cuid())
+  publicName       String    @unique
+  internalName     String
+  displayName      String
+  description      String?
+  contextWindow    Int
+  maxOutputTokens  Int?
+  priceInPer1kIdr  Int
+  priceOutPer1kIdr Int
+  capabilities     Json      @default("{}")
+  isActive         Boolean   @default(true)
+  deprecatedAt     DateTime? @db.Timestamptz
+  createdAt        DateTime  @default(now()) @db.Timestamptz
+  updatedAt        DateTime  @updatedAt @db.Timestamptz
+
+  plans     PlanModel[]
+  usageLogs UsageLog[]
+
+  @@index([isActive])
+}
+
+model Plan {
+  id                String   @id @default(cuid())
+  name              String   @unique
+  displayName       String
+  markup            Float    @default(1.5)
+  rpmLimit          Int
+  monthlyTokenLimit Int?
+  monthlyPriceIdr   Int      @default(0)
+  isActive          Boolean  @default(true)
+  createdAt         DateTime @default(now()) @db.Timestamptz
+
+  users  User[]
+  models PlanModel[]
+}
+
+model PlanModel {
+  planId  String
+  modelId String
+  plan    Plan   @relation(fields: [planId], references: [id], onDelete: Cascade)
+  model   Model  @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@id([planId, modelId])
+}
+
+model UsageLog {
+  id                String      @id @default(cuid())
+  requestId         String      @unique
+  userId            String
+  user              User        @relation(fields: [userId], references: [id])
+  apiKeyId          String?
+  apiKey            ApiKey?     @relation(fields: [apiKeyId], references: [id])
+  modelId           String
+  model             Model       @relation(fields: [modelId], references: [id])
+  endpoint          String
+  promptTokens      Int         @default(0)
+  completionTokens  Int         @default(0)
+  totalTokens       Int         @default(0)
+  costIdr           Int         @default(0)
+  status            UsageStatus
+  streamed          Boolean     @default(false)
+  latencyMs         Int?
+  upstreamLatencyMs Int?
+  errorCode         String?
+  createdAt         DateTime    @default(now()) @db.Timestamptz
+
+  @@index([userId, createdAt])
+  @@index([modelId, createdAt])
+  @@index([createdAt])
+}
+
+model Transaction {
+  id            String     @id @default(cuid())
+  orderId       String     @unique
+  userId        String
+  user          User       @relation(fields: [userId], references: [id])
+  amountIdr     Int
+  status        TrxnStatus @default(PENDING)
+  method        String?
+  snapToken     String?
+  redirectUrl   String?
+  midtransTxnId String?
+  paidAt        DateTime?  @db.Timestamptz
+  rawPayload    Json?
+  createdAt     DateTime   @default(now()) @db.Timestamptz
+  updatedAt     DateTime   @updatedAt @db.Timestamptz
+
+  @@index([userId, status])
+  @@index([createdAt])
+}
+
+model BalanceLedger {
+  id           String       @id @default(cuid())
+  userId       String
+  user         User         @relation(fields: [userId], references: [id])
+  deltaIdr     Int
+  balanceAfter Int
+  reason       LedgerReason
+  referenceId  String?
+  note         String?
+  createdAt    DateTime     @default(now()) @db.Timestamptz
+
+  @@index([userId, createdAt])
+}
+
+model VerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  type      TokenType
+  expiresAt DateTime  @db.Timestamptz
+  usedAt    DateTime? @db.Timestamptz
+  createdAt DateTime  @default(now()) @db.Timestamptz
+
+  @@index([userId, type])
+}
+
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  adminId    String
+  admin      User     @relation(fields: [adminId], references: [id])
+  action     String
+  targetType String?
+  targetId   String?
+  metadata   Json?
+  ip         String?
+  createdAt  DateTime @default(now()) @db.Timestamptz
+
+  @@index([adminId, createdAt])
+  @@index([action])
+}
+
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @db.Timestamptz
+}

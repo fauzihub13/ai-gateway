@@ -1,0 +1,248 @@
+# 08 — Model Mapping
+
+Konsep abstraksi public vs internal model, struktur tabel mapping, cara kelola model, strategi harga, capability flags, versioning & deprecation, sinkronisasi dengan 9Router.
+
+---
+
+## 1. Konsep abstraksi
+
+```
+User kirim:      model = "gpt-4o"          ← PUBLIC (yang user tahu)
+Platform map:    publicName → internalName
+Platform kirim:  model = "gh/gpt-4o"        ← INTERNAL (9Router format)
+```
+
+Manfaat:
+1. **Menyembunyikan provider upstream** (GitHub Copilot `gh/`, Kiro `kr/`, Google `gm/`).
+2. **Stabilkan nama** — provider bisa ganti routing tanpa ubah API kami.
+3. **Kontrol harga & akses per plan** di satu tempat.
+4. **Deprecation terkendali** tanpa menyentuh user.
+
+Aturan: **nama internal tidak boleh pernah keluar** dari server. Rewrite di response stream & non-stream (lihat [09-STREAMING.md](./09-STREAMING.md)).
+
+---
+
+## 2. Prefiks internal (9Router) — RAHASIA
+
+| Prefiks | Provider | Contoh internal |
+|---|---|---|
+| `gh/` | GitHub Copilot | `gh/gpt-4o` |
+| `kr/` | Kiro | `kr/claude-sonnet-4.5` |
+| `gm/` | Google (Antigravity/Gemini) | `gm/gemini-1.5-pro` |
+| `an/` | Anthropic | `an/claude-3-5-haiku` |
+
+Tabel ini **tidak pernah** ditampilkan ke user, tidak masuk API response, tidak masuk dokumentasi publik.
+
+---
+
+## 3. Struktur tabel `Model`
+
+| Kolom | Fungsi |
+|---|---|
+| `publicName` | id yang user kirim (`gpt-4o`), UNIQUE |
+| `internalName` | yang dikirim ke 9Router (`gh/gpt-4o`) |
+| `displayName` | label UI ("GPT-4o") |
+| `description` | deskripsi singkat untuk docs/UI |
+| `contextWindow` | maks token konteks |
+| `maxOutputTokens` | maks output |
+| `priceInPer1kIdr` | harga dasar input per 1k token (IDR) |
+| `priceOutPer1kIdr` | harga dasar output per 1k token (IDR) |
+| `capabilities` | JSON flags (stream/vision/tools/jsonMode) |
+| `isActive` | model tersedia? |
+| `deprecatedAt` | tanggal deprecate |
+
+Detail kolom → [04-DATABASE-SCHEMA.md](./04-DATABASE-SCHEMA.md).
+
+---
+
+## 4. Pricing strategy
+
+Harga final ke user = `harga dasar × markup plan`, dibulatkan ceil ke rupiah.
+
+```
+cost_idr = ceil( (promptTokens/1000) × priceInPer1kIdr × plan.markup
+               + (completionTokens/1000) × priceOutPer1kIdr × plan.markup )
+```
+
+### 4.1 Contoh harga
+
+| Model | In/1k (dasar) | Out/1k (dasar) | basic (×1.5) | pro (×1.35) | enterprise (×1.2) |
+|---|---|---|---|---|---|
+| gpt-4o | Rp4 | Rp12 | Rp6 / Rp18 | Rp5.4 / Rp16.2 | Rp4.8 / Rp14.4 |
+| gpt-4o-mini | Rp1 | Rp3 | Rp1.5 / Rp4.5 | Rp1.35 / Rp4.05 | Rp1.2 / Rp3.6 |
+| claude-sonnet-4.5 | Rp5 | Rp18 | Rp7.5 / Rp27 | Rp6.75 / Rp24.3 | Rp6 / Rp21.6 |
+| gemini-1.5-pro | Rp3 | Rp10 | Rp4.5 / Rp15 | Rp4.05 / Rp13.5 | Rp3.6 / Rp12 |
+
+> Harga dasar `priceInPer1kIdr`/`priceOutPer1kIdr` diset **di atas cost upstream**. Markup plan menambah margin. Simpan harga dasar sebagai angka bulat (IDR) — bila perlu pecahan, simpan dalam satuan lebih kecil (mis. per 1000 token dalam milirupiah) dan konversi saat hitung.
+
+### 4.2 Alternatif pricing (per-plan eksklusif)
+
+Bila tiap plan butuh harga final berbeda yang tidak linear, tambahkan tabel `PlanModelPrice { planId, modelId, priceInPer1kIdr, priceOutPer1kIdr }` dan gunakan bila ada; fallback ke markup × harga dasar. (Fase awal: markup cukup.)
+
+### 4.3 Display harga ke user
+
+`GET /api/models` mengembalikan **harga final sudah termasuk markup plan user**. Jangan pernah kirim `priceInPer1kIdr` dasar mentah ke user.
+
+```json
+{
+  "publicName": "gpt-4o",
+  "displayName": "GPT-4o",
+  "contextWindow": 128000,
+  "priceInPer1kIdr": 6,
+  "priceOutPer1kIdr": 18,
+  "capabilities": { "stream": true, "vision": true, "tools": true, "jsonMode": true }
+}
+```
+
+---
+
+## 5. Capability flags
+
+```json
+{
+  "stream": true,
+  "vision": true,
+  "tools": true,
+  "jsonMode": true,
+  "embedding": false
+}
+```
+
+| Flag | Arti | Efek |
+|---|---|---|
+| `stream` | dukung SSE | bila false dan user minta stream → 400 |
+| `vision` | terima image input | validasi content array |
+| `tools` | function calling | teruskan `tools`, validasi |
+| `jsonMode` | `response_format: json_object` | teruskan |
+| `embedding` | model embedding | rute ke `/v1/embeddings` |
+
+Validasi request: bila user kirim `tools` tapi model `tools=false` → 400 `invalid_request_error`.
+
+---
+
+## 6. Versioning model
+
+Dukung dua tipe:
+
+1. **Alias** (disarankan): `gpt-4o` selalu menunjuk versi terbaik. `internalName` boleh diubah admin tanpa breaking API.
+2. **Pinned version**: `gpt-4o-2024-08` sebagai publicName terpisah → `internalName` tetap. Berguna untuk user yang butuh stabilitas.
+
+```
+publicName            internalName
+gpt-4o          →     gh/gpt-4o            (alias, ikut versi terbaru)
+gpt-4o-2024-08  →     gh/gpt-4o-2024-08    (pinned)
+```
+
+Aturan: **jangan ubah `publicName`** (breaking). Boleh ubah `internalName` (transparan).
+
+---
+
+## 7. Menambah / update / menghapus model
+
+### 7.1 Tambah model
+
+1. Pastikan model sudah ada di 9Router (cek `GET {9Router}/v1/models` dengan gateway key).
+2. Catat `internalName` + prefiks provider.
+3. Admin: `POST /api/admin/models`:
+
+```bash
+curl -X POST https://app.mpruy.ai/api/admin/models \
+  -H "Content-Type: application/json" -b admin_cookies.txt \
+  -d '{
+    "publicName": "gpt-4o-mini",
+    "internalName": "gh/gpt-4o-mini",
+    "displayName": "GPT-4o mini",
+    "contextWindow": 128000,
+    "maxOutputTokens": 16384,
+    "priceInPer1kIdr": 1,
+    "priceOutPer1kIdr": 3,
+    "capabilities": { "stream": true, "vision": true, "tools": true, "jsonMode": true }
+  }'
+```
+
+4. Tambahkan ke plan via `PlanModel` (set akses).
+
+### 7.2 Update
+
+`PATCH /api/admin/models/:id` — boleh ubah harga, capability, displayName, internalName, isActive. Perubahan berlaku segera (harga dibaca per-request dari DB/cache).
+
+### 7.3 Hapus / deprecate
+
+**Jangan hapus baris** (UsageLog masih FK). Set `isActive=false` + `deprecatedAt=now`:
+
+- Model hilang dari `GET /v1/models` untuk user.
+- Request ke model tsb → 404 `model_not_found` (atau pesan deprecation bila disediakan alias pengganti).
+
+```json
+{ "error": { "message": "Model gpt-4-legacy has been deprecated. Use gpt-4o instead.", "type": "invalid_request_error", "code": "model_deprecated" } }
+```
+
+---
+
+## 8. Sinkronisasi dengan 9Router
+
+9Router menyediakan `GET /v1/models` (dengan gateway key). Job berkala (cron harian) membandingkan:
+
+```
+9Router models ─────┐
+                     ├─▶ diff ──▶ laporan ke admin:
+DB publicName set ───┘            - model di 9Router tapi belum di DB (kandidat tambah)
+                                  - model di DB tapi hilang di 9Router (kandidat deprecate)
+```
+
+```ts
+async function syncModels() {
+  const res = await nineRouterFetch('/v1/models');
+  const upstream = (await res.json()).data.map((m: any) => m.id); // ex: gh/gpt-4o
+  const local = await db.model.findMany({ where: { isActive: true } });
+  const known = new Set(local.map((m) => m.internalName));
+
+  const missing = upstream.filter((id: string) => !known.has(id));
+  const stale = local.filter((m) => !upstream.includes(m.internalName));
+
+  return { missing, stale }; // admin review, JANGAN auto-tambah (butuh tetapkan harga)
+}
+```
+
+Kebijakan: **tidak auto-tambah** model (harga & akses harus diputuskan manusia). Sync hanya memberi sinyal.
+
+---
+
+## 9. Cache
+
+Model jarang berubah tapi dibaca setiap request → cache di Redis (TTL 60s) atau in-memory Next.js:
+
+```ts
+async function getModelMap() {
+  const cached = await redis.get<Record<string, ModelRow>>('models:map');
+  if (cached) return cached;
+  const rows = await db.model.findMany({ where: { isActive: true } });
+  const map = Object.fromEntries(rows.map((m) => [m.publicName, m]));
+  await redis.set('models:map', map, { ex: 60 });
+  return map;
+}
+```
+
+Invalidasi cache saat admin ubah model (`redis.del('models:map')`).
+
+---
+
+## 10. Edge cases
+
+| Kasus | Penanganan |
+|---|---|
+| User kirim `internalName` langsung (`gh/gpt-4o`) | tidak ada di map → 404 `model_not_found` (internal tak bocor) |
+| internalName berubah tapi user pakai alias | transparan |
+| 9Router tolak internal model | 502 `upstream_error` (jangan bocorkan internal) |
+| Harga dasar 0 (gratis) | tetap valid, markup tidak berpengaruh |
+| Model embedding dipanggil via chat | 400 `invalid_request_error` |
+| Model tanpa `maxOutputTokens` | tidak kirim `max_tokens` ke upstream |
+
+---
+
+## 11. Referensi
+
+- Skema `Model`/`Plan`/`PlanModel` → [04-DATABASE-SCHEMA.md](./04-DATABASE-SCHEMA.md)
+- Billing pakai harga → [10-BILLING-USAGE.md](./10-BILLING-USAGE.md)
+- Rewrite nama di stream → [09-STREAMING.md](./09-STREAMING.md)
+- Admin kelola model → [16-ADMIN-PANEL.md](./16-ADMIN-PANEL.md)
