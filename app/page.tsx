@@ -8,6 +8,13 @@ import { ProviderStrip } from '@/components/landing/provider-strip';
 import { RequestPlayground } from '@/components/landing/request-playground';
 import { ModelCatalog, type CatalogModel } from '@/components/landing/model-catalog';
 import { UsagePreview } from '@/components/landing/usage-preview';
+import { Plate } from '@/components/landing/illustrations/plate';
+import { IsometricStack } from '@/components/landing/illustrations/isometric-stack';
+import { LifecycleMap } from '@/components/landing/illustrations/lifecycle-map';
+import { StreamNormalizer } from '@/components/landing/illustrations/stream-normalizer';
+import { FailoverTopology } from '@/components/landing/illustrations/failover-topology';
+import { TokenMeter } from '@/components/landing/illustrations/token-meter';
+import { KeyFingerprint } from '@/components/landing/illustrations/key-fingerprint';
 
 export const dynamic = 'force-dynamic';
 
@@ -247,6 +254,72 @@ export default async function Home() {
         </div>
       </section>
 
+      {/* ── Anatomy showcase ─────────────────────────────────── */}
+      <section id="anatomy" className="scroll-mt-20 border-t border-hairline">
+        <div className="container py-16 lg:py-20">
+          <div className="mb-10 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+            <div>
+              <Eyebrow>Blueprint</Eyebrow>
+              <h2 className="mt-4 max-w-2xl font-display text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
+                Anatomi gateway, lapis demi lapis.
+              </h2>
+            </div>
+            <p className="reading max-w-sm">
+              Enam diagram teknis — tiap satu menjelaskan bagian berbeda dari cara kerja gateway, bukan sekadar pola
+              jaringan yang diulang.
+            </p>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Plate
+              label="gateway.anatomy"
+              index="01"
+              title="Lapisan yang dilewati request"
+              caption="Proyeksi isometrik: request turun melewati edge, auth, limit, router, lalu billing. Arahkan kursor ke sebuah lapisan untuk menyorotnya."
+            >
+              <IsometricStack />
+            </Plate>
+
+            <Plate
+              label="request.lifecycle"
+              index="02"
+              title="Rute transit request"
+              caption="Digambar seperti peta transit: auth → rate limit → resolve model → route → stream → settle usage. Hover stasiun untuk detail setiap tahap."
+            >
+              <LifecycleMap />
+            </Plate>
+
+            <Plate
+              className="lg:col-span-2"
+              label="stream.sse"
+              index="03"
+              title="Normalisasi streaming"
+              caption="Chunk SSE upstream masuk satu per satu, melewati gerbang (normalize → inject [DONE] → usage), lalu keluar sebagai teks utuh di client. Tombol di kanan atas mengganti sumber usage: dari upstream atau hasil estimasi fallback."
+            >
+              <StreamNormalizer />
+            </Plate>
+
+            <Plate
+              label="resilience.failover"
+              index="04"
+              title="Retry & failover"
+              caption="Bila provider utama mengembalikan error, request dicoba ulang ke fallback. Perilaku retry diilustrasikan; ini bukan status upstream secara live."
+            >
+              <FailoverTopology />
+            </Plate>
+
+            <Plate
+              label="billing.meter"
+              index="05"
+              title="Instrumen biaya"
+              caption="Level meter token, odometer pemakaian bulan ini, dan saldo prabayar. Rumus biaya per request ditampilkan apa adanya."
+            >
+              <TokenMeter />
+            </Plate>
+          </div>
+        </div>
+      </section>
+
       {/* ── Playground ───────────────────────────────────────── */}
       <section className="border-t border-hairline">
         <div className="container py-16 lg:py-20">
@@ -394,50 +467,8 @@ export default async function Home() {
             </div>
           </div>
 
-          <div className="relative">
-            <div className="grid-canvas absolute inset-0 -z-10" aria-hidden="true" />
-            <svg viewBox="0 0 420 220" className="w-full" aria-hidden="true">
-              <rect x="0" y="0" width="420" height="220" fill="none" stroke="hsl(var(--hairline))" />
-              <rect x="16" y="88" width="120" height="44" rx="2" fill="white" stroke="hsl(var(--electric))" strokeWidth="1.2" />
-              <text x="30" y="108" className="fill-foreground font-mono" fontSize="10" fontWeight="600">
-                request
-              </text>
-              <text x="30" y="122" className="fill-muted-foreground font-mono" fontSize="8">
-                /v1/chat/completions
-              </text>
-
-              {[40, 88, 136].map((y, i) => (
-                <g key={y}>
-                  <line
-                    x1="136"
-                    y1="110"
-                    x2="272"
-                    y2={y + 22}
-                    stroke="hsl(var(--electric))"
-                    strokeWidth="1"
-                    strokeDasharray="4 6"
-                    className="animate-dash-slow"
-                  />
-                  <rect
-                    x="272"
-                    y={y + 6}
-                    width="120"
-                    height="32"
-                    rx="2"
-                    fill={i === 1 ? 'hsl(var(--electric-pale))' : 'white'}
-                    stroke={i === 1 ? 'hsl(var(--electric))' : 'hsl(var(--hairline))'}
-                    strokeWidth="1"
-                  />
-                  <text x="284" y={y + 26} className="fill-muted-foreground font-mono" fontSize="8.5">
-                    {['provider-a', 'provider-b', 'provider-c'][i]}
-                  </text>
-                </g>
-              ))}
-              <circle cx="204" cy="110" r="4" fill="hsl(var(--electric))" />
-            </svg>
-            <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-              satu request · banyak tujuan
-            </p>
+          <div className="rounded-sm border border-hairline bg-card p-4">
+            <KeyFingerprint />
           </div>
         </div>
       </section>
@@ -454,6 +485,7 @@ export default async function Home() {
           </div>
           <nav className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-muted-foreground">
             <Link href="/#models" className="link-rule hover:text-foreground">Models</Link>
+            <Link href="/#anatomy" className="link-rule hover:text-foreground">Blueprint</Link>
             <Link href="/#pricing" className="link-rule hover:text-foreground">Pricing</Link>
             <Link href="/docs" className="link-rule hover:text-foreground">Documentation</Link>
             <Link href="/login" className="link-rule hover:text-foreground">Sign in</Link>
