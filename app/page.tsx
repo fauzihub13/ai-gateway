@@ -397,7 +397,7 @@ export default async function Home() {
                 </div>
                 <div className="mt-4 flex items-end gap-1">
                   <span className="tabular font-display text-3xl tracking-tight">
-                    {p.monthlyPriceIdr > 0 ? formatIdr(p.monthlyPriceIdr) : 'Prabayar'}
+                    {p.monthlyPriceIdr > 0 ? formatIdr(p.monthlyPriceIdr) : 'Gratis'}
                   </span>
                   {p.monthlyPriceIdr > 0 && (
                     <span className="pb-1 font-mono text-[11px] text-muted-foreground">/bulan</span>
