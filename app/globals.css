@@ -166,6 +166,23 @@
   .tabular {
     font-variant-numeric: tabular-nums;
   }
+
+  /* Inline code (outside <pre> blocks) may contain long URLs, endpoint paths,
+     or key fragments without spaces. Allow them to wrap so narrow viewports
+     never develop horizontal overflow. */
+  :not(pre) > code {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  /* Inside data tables keep identifiers intact; the table scrolls instead
+     of breaking `invalid_api_key`-style tokens across lines. */
+  td code,
+  th code {
+    overflow-wrap: normal;
+    word-break: normal;
+    white-space: nowrap;
+  }
 }
 
 /* Respect reduced-motion: kill decorative animation, keep content visible. */

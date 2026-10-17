@@ -88,7 +88,7 @@ export function ModelCatalog({ models }: { models: CatalogModel[] }) {
         </div>
       </div>
 
-      <div className="scrollbar-thin overflow-x-auto">
+      <div className="scrollbar-thin hidden overflow-x-auto md:block">
         <table className="w-full min-w-[680px] text-sm">
           <thead>
             <tr className="border-b border-hairline text-left">
@@ -141,14 +141,65 @@ export function ModelCatalog({ models }: { models: CatalogModel[] }) {
             ))}
           </tbody>
         </table>
-
-        {filtered.length === 0 && (
-          <div className="px-4 py-12 text-center">
-            <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">no models matched</p>
-            <p className="mt-1 text-sm text-muted-foreground">Ubah kata kunci atau hapus filter capability.</p>
-          </div>
-        )}
       </div>
+
+      {/* Mobile: card list (the wide table is desktop-only). */}
+      <ul className="divide-y divide-hairline md:hidden">
+        {filtered.map((m) => (
+          <li key={m.publicName} className="p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="truncate font-mono text-[12.5px] font-medium text-foreground">{m.publicName}</div>
+                <div className="truncate text-xs text-muted-foreground">{m.displayName}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => copyName(m.publicName)}
+                aria-label={`Copy nama model ${m.publicName}`}
+                className="grid h-7 w-7 shrink-0 place-items-center rounded-sm border border-hairline text-muted-foreground transition-colors hover:border-electric hover:text-electric"
+              >
+                {copied === m.publicName ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+              </button>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-1">
+              {CAP_KEYS.filter((c) => m.capabilities[c]).map((c) => (
+                <span
+                  key={c}
+                  className="rounded-sm border border-hairline px-1.5 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.1em] text-muted-foreground"
+                >
+                  {CAP_LABEL[c]}
+                </span>
+              ))}
+              {CAP_KEYS.every((c) => !m.capabilities[c]) && (
+                <span className="font-mono text-[10px] text-muted-foreground">—</span>
+              )}
+            </div>
+
+            <dl className="mt-3 grid grid-cols-3 gap-2 border-t border-hairline pt-3 text-xs">
+              <div>
+                <dt className="tech-label text-[9px]">Context</dt>
+                <dd className="tabular mt-0.5 font-mono text-foreground">{formatNumber(m.contextWindow)}</dd>
+              </div>
+              <div>
+                <dt className="tech-label text-[9px]">In / 1K</dt>
+                <dd className="tabular mt-0.5 font-mono text-foreground">{formatIdr(m.priceInPer1kIdr)}</dd>
+              </div>
+              <div>
+                <dt className="tech-label text-[9px]">Out / 1K</dt>
+                <dd className="tabular mt-0.5 font-mono text-foreground">{formatIdr(m.priceOutPer1kIdr)}</dd>
+              </div>
+            </dl>
+          </li>
+        ))}
+      </ul>
+
+      {filtered.length === 0 && (
+        <div className="px-4 py-12 text-center">
+          <p className="font-mono text-xs uppercase tracking-[0.14em] text-muted-foreground">no models matched</p>
+          <p className="mt-1 text-sm text-muted-foreground">Ubah kata kunci atau hapus filter capability.</p>
+        </div>
+      )}
 
       <div className="border-t border-hairline px-4 py-3">
         <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">

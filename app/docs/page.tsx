@@ -12,7 +12,7 @@ export const dynamic = 'force-dynamic';
 
 function Section({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
   return (
-    <section id={id} className="scroll-mt-24 border-t border-hairline pt-10 first:border-t-0 first:pt-0">
+    <section id={id} className="scroll-mt-32 border-t border-hairline pt-10 first:border-t-0 first:pt-0">
       <h2 className="mb-4 font-display text-2xl font-semibold tracking-tight">{title}</h2>
       <div className="space-y-4 text-sm leading-relaxed text-muted-foreground [&_strong]:text-foreground">
         {children}

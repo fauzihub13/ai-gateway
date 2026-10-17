@@ -21,7 +21,7 @@ const SAMPLE_REPLY =
 
 export function RequestPlayground({
   models,
-  baseUrl = 'https://api.mpruy.ai/v1',
+  baseUrl = 'https://ai.mpruy.my.id/v1',
 }: {
   models: PlaygroundModel[];
   baseUrl?: string;
@@ -110,8 +110,8 @@ const reader = res.body!.getReader();`;
   return (
     <div className="grid gap-px overflow-hidden rounded-sm border border-hairline bg-hairline lg:grid-cols-2">
       {/* Code panel */}
-      <div className="bg-card">
-        <div className="flex items-center justify-between border-b border-hairline px-4 py-2.5">
+      <div className="min-w-0 bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-hairline px-4 py-2.5">
           <div className="flex items-center gap-3">
             {(['curl', 'ts'] as const).map((k) => (
               <button
@@ -127,7 +127,7 @@ const reader = res.body!.getReader();`;
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-2">
             <label className="sr-only" htmlFor="pg-model">
               Model
             </label>
@@ -135,7 +135,7 @@ const reader = res.body!.getReader();`;
               id="pg-model"
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              className="h-7 rounded-sm border border-hairline bg-background px-2 font-mono text-[11px] text-foreground outline-none focus-visible:border-electric"
+              className="h-7 max-w-[10rem] rounded-sm border border-hairline bg-background px-2 font-mono text-[11px] text-foreground outline-none focus-visible:border-electric"
             >
               {models.length === 0 && <option value="mimo">mimo</option>}
               {models.map((m) => (
@@ -160,8 +160,8 @@ const reader = res.body!.getReader();`;
       </div>
 
       {/* Run panel */}
-      <div className="flex flex-col bg-card">
-        <div className="flex items-center justify-between border-b border-hairline px-4 py-2.5">
+      <div className="flex min-w-0 flex-col bg-card">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-hairline px-4 py-2.5">
           <span className="tech-label">Response</span>
           <span className="flex items-center gap-2">
             <span className="rounded-sm border border-warning/40 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em] text-warning">
