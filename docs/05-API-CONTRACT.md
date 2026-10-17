@@ -175,7 +175,7 @@ Berguna untuk SDK/tooling yang memverifikasi key.
 |---|---|---|---|
 | 400 | `invalid_request_error` | `invalid_request_error` | detail field salah |
 | 401 | `invalid_request_error` | `invalid_api_key` | "Incorrect API key provided." |
-| 402 | `insufficient_quota` | `insufficient_balance` | "Insufficient balance." |
+| 402 | `insufficient_quota` | `insufficient_balance` | "Insufficient balance." (tidak berlaku untuk model gratis) |
 | 403 | `permission_error` | `model_not_allowed` | "You do not have access to model X." |
 | 403 | `permission_error` | `email_not_verified` | "Email not verified. Verify your email before signing in." |
 | 403 | `permission_error` | `account_suspended` | "Your account is suspended." |

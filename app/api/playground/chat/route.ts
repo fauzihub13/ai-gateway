@@ -3,7 +3,7 @@ import { nanoid } from 'nanoid';
 import { db } from '@/lib/db';
 import { requireUser, assertCsrf } from '@/lib/auth';
 import { nineRouterFetch } from '@/lib/ninerouter';
-import { settleUsage, computeCost, getBalance } from '@/lib/billing';
+import { settleUsage, computeCost, getBalance, isFreeModel } from '@/lib/billing';
 import { estimatePromptTokens, estimateTokens } from '@/lib/tokens';
 import { toErrorResponse, BadRequestError, InsufficientBalanceError, ForbiddenError, NotFoundError } from '@/lib/errors';
 import { mapUpstreamError } from '@/lib/upstream';
@@ -41,8 +41,11 @@ export async function POST(req: Request) {
     });
     if (!access) throw new ForbiddenError('model_not_allowed', `You do not have access to model \`${body.model}\`.`);
 
-    const balance = await getBalance(s.sub);
-    if (balance <= 0) throw new InsufficientBalanceError();
+    // Model gratis (harga efektif 0) tetap boleh dipakai walau saldo 0.
+    if (!isFreeModel(model, user.plan)) {
+      const balance = await getBalance(s.sub);
+      if (balance <= 0) throw new InsufficientBalanceError();
+    }
 
     const upstream = await nineRouterFetch('/v1/chat/completions', {
       method: 'POST',

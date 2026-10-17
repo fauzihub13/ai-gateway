@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { db } from './db';
 import { extractBearer, hashApiKey, looksLikeApiKey } from './apikey';
 import { resolveModel, type ModelCapabilities } from './model-mapping';
-import { getBalance } from './billing';
+import { getBalance, isFreeModel } from './billing';
 import { enforceRateLimitsSafe, type RateHeaders } from './ratelimit';
 import { UnauthorizedError, InsufficientBalanceError, TooManyRequestsError, BadRequestError } from './errors';
 import type { ApiKey, Plan, Model } from '@prisma/client';
@@ -50,7 +50,16 @@ export interface PreflightContext extends AuthContext {
   rateHeaders: RateHeaders;
 }
 
-export async function assertBalance(userId: string): Promise<void> {
+/**
+ * Tolak request hanya bila saldo <= 0 DAN model berbayar.
+ * Model gratis (harga efektif 0) tetap bisa dipakai walau saldo 0 — biayanya 0.
+ */
+export async function assertBalance(
+  userId: string,
+  opts?: { model?: { priceInPer1kIdr: number; priceOutPer1kIdr: number }; plan?: { markup: number } },
+): Promise<void> {
+  const free = opts?.model && opts?.plan ? isFreeModel(opts.model, opts.plan) : false;
+  if (free) return;
   const balance = await getBalance(userId);
   if (balance <= 0) throw new InsufficientBalanceError();
 }
@@ -114,7 +123,7 @@ export async function preflight(
   }
 
   const model = await resolveModel(opts.modelName, auth.planId, auth.keyModels);
-  await assertBalance(auth.userId);
+  await assertBalance(auth.userId, { model, plan: auth.plan });
   await assertMonthlyQuota(auth);
 
   return { ...auth, model, rateHeaders: rate.headers };

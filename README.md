@@ -388,7 +388,7 @@ curl -s -X POST localhost:3000/api/admin/users/<userId>/balance \
   -d '{"deltaIdr":50000,"note":"manual topup"}'
 ```
 
-Saldo habis (`<= 0`) → chat balas **402** `insufficient_balance`.
+Saldo habis (`<= 0`) → chat balas **402** `insufficient_balance`. Model dengan harga efektif 0 (gratis) tetap bisa dipakai walau saldo 0.
 
 ---
 

@@ -164,7 +164,7 @@ export async function mapUpstreamError(res: Response, requestId: string): Promis
 |---|---|---|
 | 400 | input invalid | `invalid_request_error` |
 | 401 | key/session invalid | `invalid_api_key` |
-| 402 | saldo kurang | `insufficient_balance` |
+| 402 | saldo kurang (model berbayar) | `insufficient_balance` |
 | 403 | akses model ditolak | `model_not_allowed`, `model_not_in_key_scope` |
 | 404 | model tak ada | `model_not_found`, `model_deprecated` |
 | 429 | rate/quota | `rate_limit_exceeded`, `quota_exceeded`, `key_quota_exceeded` |

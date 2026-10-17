@@ -151,15 +151,22 @@ Request masuk (sama user, paralel):
 Pre-flight check sebelum ke upstream (optimistik, mencegah kirim request yang pasti gagal):
 
 ```ts
-async function assertBalance(userId: string, estimatedMinCost: number) {
+async function assertBalance(
+  userId: string,
+  model: { priceInPer1kIdr: number; priceOutPer1kIdr: number },
+  plan: { markup: number },
+) {
+  // Model gratis (harga efektif 0) boleh dipakai walau saldo 0 — biayanya 0.
+  if (isFreeModel(model, plan)) return;
   const cached = await redis.get<number>(`balance:${userId}`);
   const balance = cached ?? (await db.user.findUniqueOrThrow({ where: { id: userId }, select: { balance: true } })).balance;
   if (balance <= 0) throw new InsufficientBalanceError();
-  if (balance < estimatedMinCost) throw new InsufficientBalanceError();
 }
 ```
 
-Catatan: karena biaya final tak diketahui sebelum respons, pre-flight hanya mencegah saldo 0. Penagihan sebenarnya di settle. Bila saldo tidak cukup saat settle → tagih 0 dan catat `ERROR` (bukan saldo negatif).
+`isFreeModel` (lihat implementasi di `src/lib/billing.ts`): `priceInPer1kIdr * plan.markup <= 0 && priceOutPer1kIdr * plan.markup <= 0`.
+
+Catatan: karena biaya final tak diketahui sebelum respons, pre-flight hanya mencegah saldo 0 pada model berbayar. Penagihan sebenarnya di settle. Bila saldo tidak cukup saat settle → tagih 0 dan catat `ERROR` (bukan saldo negatif). Untuk model gratis, `costIdr = 0` sehingga settle tidak memotong saldo dan tidak menulis `BalanceLedger`.
 
 ---
 

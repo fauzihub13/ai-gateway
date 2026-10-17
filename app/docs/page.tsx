@@ -185,7 +185,7 @@ data: [DONE]`;
             dan verifikasi email.
           </li>
           <li>
-            <strong>Top-up saldo</strong> via halaman Billing (Midtrans). Request akan ditolak jika saldo 0.
+            <strong>Top-up saldo</strong> via halaman Billing (Midtrans). Request akan ditolak jika saldo 0 dan model berbayar (model gratis tetap bisa dipakai).
           </li>
           <li>
             <strong>Buat API key</strong> di halaman{' '}

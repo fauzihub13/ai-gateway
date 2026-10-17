@@ -14,6 +14,17 @@ export function computeCost(opts: {
   return Math.ceil(raw);
 }
 
+/**
+ * Model dianggap gratis untuk plan tertentu bila harga efektif (harga model × markup plan)
+ * nol untuk input maupun output. Dipakai agar user bersaldo 0 tetap boleh memakai model gratis.
+ */
+export function isFreeModel(
+  model: { priceInPer1kIdr: number; priceOutPer1kIdr: number },
+  plan: { markup: number },
+): boolean {
+  return model.priceInPer1kIdr * plan.markup <= 0 && model.priceOutPer1kIdr * plan.markup <= 0;
+}
+
 export interface SettleInput {
   requestId: string;
   userId: string;

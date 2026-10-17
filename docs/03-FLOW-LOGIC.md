@@ -208,6 +208,7 @@ Request model "X" dari user dengan plan P, key K
 │     ├─ scope="full" → semua model plan boleh
 │     └─ scope="models" → X harus ada di K.allowedModels ──tidak──▶ 403 model_not_in_key_scope
 │
+├─ Model gratis? ──ya──▶ lanjut (biaya 0)
 ├─ Saldo user > 0? ──tidak──▶ 402 insufficient_balance
 │
 ├─ Quota bulanan plan belum habis? ──habis──▶ 429 quota_exceeded
@@ -287,7 +288,8 @@ Karena `INSERT ... ON CONFLICT DO NOTHING` + decrement di transaksi yang sama, r
 | Body invalid (Zod) | 400 | `invalid_request_error` | setelah perbaiki |
 | Model tidak ada | 404 | `model_not_found` | tidak |
 | Plan/key tidak boleh model | 403 | `model_not_allowed` | tidak |
-| Saldo habis | 402 | `insufficient_balance` | setelah top-up |
+| Saldo habis (model berbayar) | 402 | `insufficient_balance` | setelah top-up |
+| Saldo 0 tapi model gratis (harga efektif 0) | — | — | request lanjut, biaya Rp0 |
 | Quota bulanan habis | 429 | `quota_exceeded` | bulan depan/upgrade |
 | Rate limit per key | 429 | `rate_limit_exceeded` | ya (setelah reset) |
 | Rate limit per IP | 429 | `rate_limit_exceeded` | ya |
