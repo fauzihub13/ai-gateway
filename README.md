@@ -5,7 +5,7 @@ Platform yang **menjual API key AI (OpenAI-compatible)**. Dibangun di atas **9Ro
 - **Frontend + Backend:** Next.js 14 (App Router, TypeScript)
 - **Database:** PostgreSQL + Prisma ORM
 - **Payment:** Midtrans (Snap)
-- **Email:** Resend
+- **Email:** Resend (SMTP)
 - **AI engine internal:** 9Router (`/v1`)
 
 > Dokumentasi arsitektur lengkap ada di [`docs/`](./docs/00-README.md). README ini fokus: **setup dari nol sampai jalan di lokal.**
@@ -43,7 +43,7 @@ Platform yang **menjual API key AI (OpenAI-compatible)**. Dibangun di atas **9Ro
 Opsional (hanya bila menguji fitur terkait):
 
 - **Midtrans** account sandbox (top-up)
-- **Resend** API key (email verify/reset)
+- **Resend** account + domain terverifikasi (email verify/reset, dikirim via SMTP)
 
 ---
 
@@ -192,9 +192,19 @@ MIDTRANS_IS_PRODUCTION="false"
 # --- App ---
 APP_BASE_URL="http://localhost:3000"
 
-# --- Email (opsional untuk lokal) ---
-RESEND_API_KEY=""
+# --- Email ---
+# Transport: smtp | api | console (kosong = auto-detect).
+# SMTP default memakai Resend SMTP: host smtp.resend.com, user `resend`, password = API key Resend.
+MAIL_TRANSPORT=""
+SMTP_HOST="smtp.resend.com"
+SMTP_PORT="587"          # 465/2465 = SSL implisit · 25/587/2587 = STARTTLS
+SMTP_SECURE=""           # kosong = otomatis dari port
+SMTP_USER="resend"
+SMTP_PASS=""             # = API key Resend (fallback ke RESEND_API_KEY)
+SMTP_ALLOW_SELF_SIGNED=""
 EMAIL_FROM="noreply@mpruy.ai"
+EMAIL_FROM_NAME="Mpruy AI"
+RESEND_API_KEY=""        # opsional; dipakai bila MAIL_TRANSPORT=api
 ```
 
 | Variable | Wajib | Fungsi |
@@ -208,9 +218,41 @@ EMAIL_FROM="noreply@mpruy.ai"
 | `MIDTRANS_SERVER_KEY` / `MIDTRANS_CLIENT_KEY` | top-up | kredensial Midtrans |
 | `MIDTRANS_IS_PRODUCTION` | top-up | `false` = sandbox |
 | `APP_BASE_URL` | ya | base URL app (link email, redirect) |
-| `RESEND_API_KEY` / `EMAIL_FROM` | email | pengiriman email |
+| `MAIL_TRANSPORT` | email | `smtp` / `api` / `console`; kosong = auto-detect |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` | email | server SMTP (default Resend) |
+| `SMTP_USER` / `SMTP_PASS` | email | kredensial SMTP (user `resend`, pass = API key) |
+| `EMAIL_FROM` / `EMAIL_FROM_NAME` | email | alamat + nama pengirim |
+| `RESEND_API_KEY` | opsional | hanya untuk transport `api` |
 
 > `.env` **jangan di-commit** (sudah ada di `.gitignore`).
+
+### 5.1 Setup email (SMTP Resend)
+
+1. Buat API key di <https://resend.com/api-keys> dan verifikasi domain di <https://resend.com/domains>.
+2. Isi `.env` (password SMTP = API key Resend, username selalu `resend`):
+
+   ```env
+   MAIL_TRANSPORT="smtp"
+   SMTP_HOST="smtp.resend.com"
+   SMTP_PORT="587"          # atau 465/2465 (SSL implisit)
+   SMTP_USER="resend"
+   SMTP_PASS="re_xxxxxxxxxxxx"
+   EMAIL_FROM="noreply@domainterverifikasi.com"
+   EMAIL_FROM_NAME="Mpruy AI"
+   ```
+
+   `EMAIL_FROM` **wajib** memakai domain yang sudah diverifikasi di Resend, jika tidak pengiriman ditolak.
+3. Tes koneksi + kirim email contoh:
+
+   ```bash
+   npm run mail:test -- kamu@email.com
+   ```
+
+   Output: `Transport: smtp (smtp.resend.com:587)` → `Koneksi SMTP OK (verify).` → `Email tes terkirim ...`
+4. Alternatif: pakai transport HTTP API dengan `MAIL_TRANSPORT="api"` + `RESEND_API_KEY`.
+5. Tanpa kredensial apa pun, transport otomatis `console`: link verifikasi hanya muncul di log dev server (tidak ada email terkirim).
+
+Catatan: `MAIL_TRANSPORT` kosong = auto-detect (`smtp` bila `SMTP_HOST` + password ada → `api` bila `RESEND_API_KEY` ada → `console`).
 
 ---
 
@@ -306,7 +348,7 @@ Buka <http://localhost:3000/login> → `admin@mpruy.ai` / `ChangeMe!123`. Cek `/
 ### 9.3 Buat user + API key
 
 1. Register di <http://localhost:3000/register>.
-2. (Opsional) verifikasi email — email link butuh Resend. Untuk lokal, lewat API:
+2. (Opsional) verifikasi email — email link dikirim lewat SMTP (Resend SMTP). Tanpa kredensial SMTP, link hanya muncul di log dev server (`[mailer] ...`). Untuk lokal bisa juga lewat API:
    ```bash
    curl -s localhost:3000/api/auth/verify-email \
      -H 'Content-Type: application/json' -d '{"token":"<token>"}'
@@ -404,7 +446,7 @@ mpruy-ai/
 | Chat balas `402 insufficient_balance` | saldo user habis | top-up (9.5) |
 | `429 rate_limit_exceeded` | limit RPM plan/key/IP | naikkan plan atau tunggu |
 | Stream menggantung tanpa `[DONE]` | quirk upstream 9Router | platform otomatis inject `[DONE]`; cek log bila masih macet |
-| Email verify tidak terkirim | `RESEND_API_KEY` kosong | isi, atau verifikasi via API (9.3) |
+| Email verify tidak terkirim | kredensial SMTP kosong (`SMTP_PASS` / `RESEND_API_KEY`) | isi `SMTP_PASS`, tes dengan `npm run mail:test`, atau verifikasi via API (9.3) |
 | `brew services` postgres mati | service berhenti | `brew services restart postgresql@18` |
 | `prisma migrate reset` menghapus data | perintah butuh konfirmasi | jangan jalankan di DB penting |
 
@@ -422,8 +464,8 @@ Beberapa item ini adalah **batasan implementasi saat ini**, bukan kesalahan setu
 
 - **Rate limit in-memory** (`src/lib/ratelimit.ts`) — per instance, reset saat dev restart. Cocok untuk lokal; untuk produksi butuh Redis/Upstash.
 - **Redis & Sentry belum dipakai** walau disebut di `docs/`. Anggap dokumentasi sebagai target.
-- **Halaman `/verify` dan `/reset-password` belum ada**, sedangkan tautan email mengarah ke sana. Untuk dev, verifikasi/reset lewat API.
-- **`verify` awal user** = `PENDING_EMAIL`; login tidak memblokir status itu, jadi tetap bisa dipakai di lokal.
+- **Halaman `/verify`, `/forgot-password`, `/reset-password` sudah ada** dan menangani tautan dari email (incl. kirim ulang verifikasi dari halaman `/verify`).
+- **Login diblokir sampai email terverifikasi** (`PENDING_EMAIL` → 403 `email_not_verified`). Alur lokal tanpa kredensil SMTP: link verifikasi muncul di log dev server (`[mailer] ...`), atau admin bisa klik **Verifikasi** di `/admin/users`.
 - **Jalur top-up** butuh Midtrans sandbox + URL webhook publik (mis. `ngrok`). Untuk lokal, tambah saldo lewat admin API.
 - **Jangan commit `.env`** dan jangan pernah menaruh gateway key 9Router di kode client.
 

@@ -95,7 +95,7 @@ User → GET /register → isi form (email, password)
             3. hash password (argon2)
             4. resolve plan default register (env `SIGNUP_PLAN`, default `free`) → user baru masuk plan Free
             5. buat VerificationToken (TTL 24 jam)
-            6. kirim email verifikasi (Resend)
+            6. kirim email verifikasi (SMTP Resend — lihat [13-SECURITY.md](./13-SECURITY.md))
             7. balas 201 (JANGAN bocorkan apakah email sudah ada — balas generik)
      → User klik link: GET /verify?token=...
             1. validasi token (belum dipakai, belum expire)
@@ -279,6 +279,9 @@ Karena `INSERT ... ON CONFLICT DO NOTHING` + decrement di transaksi yang sama, r
 | Kondisi | HTTP | `error.code` | Retryable user? |
 |---|---|---|---|
 | Header Authorization absen/malformed | 401 | `invalid_api_key` | setelah perbaiki |
+| Login: email belum diverifikasi | 403 | `email_not_verified` | setelah verifikasi (atau resend) |
+| Login: akun suspend | 403 | `account_suspended` | setelah admin unsuspend |
+| Login: kredensial salah | 401 | `invalid_credentials` | setelah perbaiki |
 | Key hash tidak ditemukan | 401 | `invalid_api_key` | tidak |
 | Key revoked/expired | 401 | `invalid_api_key` | tidak |
 | Body invalid (Zod) | 400 | `invalid_request_error` | setelah perbaiki |

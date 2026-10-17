@@ -16,7 +16,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "mail:test": "node --env-file=.env --import tsx scripts/mail-test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -42,6 +43,7 @@
     "nanoid": "5.0.7",
     "next": "14.2.5",
     "next-themes": "^0.3.0",
+    "nodemailer": "^6.9.14",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "resend": "3.4.0",
@@ -51,6 +53,7 @@
   },
   "devDependencies": {
     "@types/node": "20.14.12",
+    "@types/nodemailer": "^6.4.15",
     "@types/react": "18.3.3",
     "@types/react-dom": "18.3.0",
     "autoprefixer": "^10.6.1",

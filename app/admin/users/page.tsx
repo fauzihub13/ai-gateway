@@ -66,8 +66,7 @@ export default function AdminUsersPage() {
     }
   }
 
-  async function toggleStatus(id: string, current: string) {
-    const action = current === 'SUSPENDED' ? 'unsuspend' : 'suspend';
+  async function setStatus(id: string, action: 'suspend' | 'unsuspend' | 'verify') {
     await fetch(`/api/admin/users/${id}/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCookie('csrf_token') },
@@ -172,7 +171,9 @@ export default function AdminUsersPage() {
                   <Badge variant="secondary">{u.plan.name}</Badge>
                 </TableCell>
                 <TableCell>
-                  <Badge variant={u.status === 'ACTIVE' ? 'success' : 'destructive'}>{u.status}</Badge>
+                  <Badge variant={u.status === 'ACTIVE' ? 'success' : u.status === 'SUSPENDED' ? 'destructive' : 'secondary'}>
+                    {u.status}
+                  </Badge>
                 </TableCell>
                 <TableCell className="text-right">{formatIdr(u.balance)}</TableCell>
                 <TableCell>
@@ -180,8 +181,17 @@ export default function AdminUsersPage() {
                     <Button variant="ghost" size="sm" onClick={() => setAdjustId(u.id)}>
                       Adjust
                     </Button>
-                    {u.role !== 'ADMIN' && (
-                      <Button variant="ghost" size="sm" onClick={() => toggleStatus(u.id, u.status)}>
+                    {u.role !== 'ADMIN' && u.status === 'PENDING_EMAIL' && (
+                      <Button variant="ghost" size="sm" onClick={() => setStatus(u.id, 'verify')}>
+                        Verifikasi
+                      </Button>
+                    )}
+                    {u.role !== 'ADMIN' && u.status !== 'PENDING_EMAIL' && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setStatus(u.id, u.status === 'SUSPENDED' ? 'unsuspend' : 'suspend')}
+                      >
                         {u.status === 'SUSPENDED' ? 'Unsuspend' : 'Suspend'}
                       </Button>
                     )}

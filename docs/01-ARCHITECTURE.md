@@ -87,7 +87,7 @@ Dokumen ini menjelaskan arsitektur makro platform Mpruy AI: komponen, boundary t
 | App DB | Sumber kebenaran data | PostgreSQL + Prisma | Trusted data |
 | Cache/Guard | Rate limit, lock saldo, idempotency | Redis (Upstash) | Semi-trusted (fail-open) |
 | Payment | Top-up saldo | Midtrans Snap + webhook | External untrusted |
-| Email | Verifikasi, reset, invoice | Resend | External |
+| Email | Verifikasi, reset, invoice | Resend (SMTP) | External |
 | Observability | Error, log, trace | Sentry + log platform | External |
 | **9Router** | Gateway AI internal | Service di VPS | **Sangat trusted, terisolasi** |
 

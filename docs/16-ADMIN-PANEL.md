@@ -50,7 +50,7 @@ export async function requireAdmin() {
 
 Filter: status, plan, search email. Kolom: email, plan, status, saldo, req30d, biaya30d, dibuat, aksi.
 
-Aksi per baris: Detail, Suspend/Unsuspend, Adjust saldo.
+Aksi per baris: Detail, Suspend/Unsuspend, Verifikasi (untuk `PENDING_EMAIL`), Adjust saldo.
 
 ### 3.3 User detail `/admin/users/[id]`
 
@@ -186,7 +186,7 @@ async function audit(adminId: string, action: string, target?: { type: string; i
 }
 ```
 
-Contoh aksi: `user.suspend`, `user.unsuspend`, `user.balance.adjust`, `model.create`, `model.update`, `model.deprecate`, `plan.update`, `transaction.reconcile`, `settings.update`, `emergency.maintenance`, `emergency.disable_model`, `admin.impersonate.start/stop`.
+Contoh aksi: `user.suspend`, `user.unsuspend`, `user.verify`, `user.balance.adjust`, `model.create`, `model.update`, `model.deprecate`, `plan.update`, `transaction.reconcile`, `settings.update`, `emergency.maintenance`, `emergency.disable_model`, `admin.impersonate.start/stop`.
 
 ---
 

@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 export const runtime = 'nodejs';
 
-const Schema = z.object({ action: z.enum(['suspend', 'unsuspend']) });
+const Schema = z.object({ action: z.enum(['suspend', 'unsuspend', 'verify']) });
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const requestId = getRequestId(req);
@@ -15,12 +15,21 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     assertCsrf(req);
     const { action } = Schema.parse(await req.json());
 
-    if (params.id === admin.sub) {
+    if (params.id === admin.sub && action !== 'verify') {
       throw new BadRequestError('invalid_request_error', 'Cannot suspend your own account.');
     }
 
-    const status = action === 'suspend' ? 'SUSPENDED' : 'ACTIVE';
-    const user = await db.user.update({ where: { id: params.id }, data: { status } });
+    // `verify` = aktifkan manual user yang masih PENDING_EMAIL (mis. email tak bisa dikirim).
+    const user =
+      action === 'verify'
+        ? await db.user.update({
+            where: { id: params.id },
+            data: { status: 'ACTIVE', emailVerifiedAt: new Date() },
+          })
+        : await db.user.update({
+            where: { id: params.id },
+            data: { status: action === 'suspend' ? 'SUSPENDED' : 'ACTIVE' },
+          });
 
     await db.adminAuditLog.create({
       data: {

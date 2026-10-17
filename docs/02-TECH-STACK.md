@@ -22,7 +22,7 @@ Stack per layer, alasan pemilihan, versi minimum, alternatif, serta `package.jso
 | Auth | JWT (jose) + httpOnly cookie | jose 5 | Ringan, edge-compatible | next-auth (berat untuk kasus ini) |
 | Password hashing | argon2 | 0.40 | Standar modern | bcrypt |
 | Payment | Midtrans (midtrans-client) | 1.4 | Populer di ID, Snap mudah | Xendit, Stripe (kurang lokal) |
-| Email | Resend | 3.4 | API sederhana, deliverability baik | SendGrid, Postmark |
+| Email | Resend (SMTP `smtp.resend.com`) | 3.4 | API sederhana + dukungan SMTP, deliverability baik | SendGrid, Postmark, Amazon SES |
 | Error tracking | Sentry | 8.x | Tracing + error | Axiom, Highlight |
 | Token estimator | gpt-tokenizer | 2.x | Estimasi token offline | tiktoken (butuh WASM) |
 | Testing unit/integ | Vitest | 1.6 | Cepat, ESM native | Jest |

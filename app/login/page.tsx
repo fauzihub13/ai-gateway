@@ -15,11 +15,13 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [unverified, setUnverified] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
+    setUnverified(false);
     setLoading(true);
     try {
       const res = await fetch('/api/auth/login', {
@@ -29,6 +31,11 @@ export default function LoginPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
+        if (data?.error?.code === 'email_not_verified') {
+          setUnverified(true);
+          setError('Email Anda belum diverifikasi. Verifikasi dulu sebelum masuk.');
+          return;
+        }
         setError(data?.error?.message ?? 'Login gagal.');
         return;
       }
@@ -74,6 +81,7 @@ export default function LoginPage() {
                 <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
               </div>
               {error && <p className="text-sm text-destructive">{error}</p>}
+              {unverified && <ResendVerification email={email} />}
               <Button type="submit" className="w-full" disabled={loading}>
                 {loading && <Loader2 className="h-4 w-4 animate-spin" />}
                 Masuk
@@ -88,6 +96,43 @@ export default function LoginPage() {
           </CardContent>
         </Card>
       </div>
+    </div>
+  );
+}
+
+function ResendVerification({ email }: { email: string }) {
+  const [status, setStatus] = useState<'idle' | 'sending' | 'sent' | 'throttled'>('idle');
+
+  async function resend() {
+    setStatus('sending');
+    try {
+      const res = await fetch('/api/auth/resend-verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json().catch(() => ({}));
+      setStatus(res.ok && data?.throttled ? 'throttled' : res.ok ? 'sent' : 'idle');
+    } catch {
+      setStatus('idle');
+    }
+  }
+
+  return (
+    <div className="space-y-2 rounded-sm border border-hairline p-3">
+      <p className="text-xs text-muted-foreground">
+        {status === 'sent'
+          ? `Tautan verifikasi baru dikirim ke ${email}.`
+          : status === 'throttled'
+            ? 'Terlalu banyak permintaan. Coba lagi beberapa menit lagi.'
+            : 'Belum menerima email verifikasi? Kirim ulang tautannya.'}
+      </p>
+      {status !== 'sent' && (
+        <Button type="button" variant="outline" size="sm" className="w-full" onClick={resend} disabled={status === 'sending'}>
+          {status === 'sending' && <Loader2 className="h-4 w-4 animate-spin" />}
+          Kirim ulang tautan verifikasi
+        </Button>
+      )}
     </div>
   );
 }

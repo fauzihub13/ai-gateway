@@ -47,7 +47,10 @@ export async function POST(req: Request) {
           expiresAt: new Date(Date.now() + 24 * 3600_000),
         },
       });
-      await sendVerifyEmail(email, raw).catch(() => undefined);
+      // Kegagalan kirim email tidak boleh menggagalkan registrasi (user bisa minta kirim ulang).
+      await sendVerifyEmail(email, raw).catch((err) => {
+        console.error('send_verify_email_failed', { requestId, err: err instanceof Error ? err.message : String(err) });
+      });
     }
 
     return json({ ok: true }, 201, { 'x-request-id': requestId });

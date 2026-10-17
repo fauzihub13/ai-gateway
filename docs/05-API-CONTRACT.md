@@ -177,6 +177,8 @@ Berguna untuk SDK/tooling yang memverifikasi key.
 | 401 | `invalid_request_error` | `invalid_api_key` | "Incorrect API key provided." |
 | 402 | `insufficient_quota` | `insufficient_balance` | "Insufficient balance." |
 | 403 | `permission_error` | `model_not_allowed` | "You do not have access to model X." |
+| 403 | `permission_error` | `email_not_verified` | "Email not verified. Verify your email before signing in." |
+| 403 | `permission_error` | `account_suspended` | "Your account is suspended." |
 | 404 | `invalid_request_error` | `model_not_found` | "The model X does not exist." |
 | 429 | `rate_limit_error` | `rate_limit_exceeded` | "Rate limit reached..." |
 | 429 | `insufficient_quota` | `quota_exceeded` | "Monthly quota exceeded." |

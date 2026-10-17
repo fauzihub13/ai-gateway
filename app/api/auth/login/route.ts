@@ -35,6 +35,9 @@ export async function POST(req: Request) {
     if (!ok) throw new UnauthorizedError('invalid_credentials', 'Invalid email or password.');
 
     if (user.status === 'SUSPENDED') throw new ForbiddenError('account_suspended', 'Your account is suspended.');
+    if (user.status === 'PENDING_EMAIL') {
+      throw new ForbiddenError('email_not_verified', 'Email not verified. Verify your email before signing in.');
+    }
     if (user.status === 'DEACTIVATED') throw new UnauthorizedError('invalid_credentials', 'Invalid email or password.');
 
     const sid = nanoid();

@@ -205,7 +205,10 @@ POST /api/auth/login { email, password }
   3. bila user ada: verifyPassword(hash, password)  ← selalu jalankan (timing-safe-ish)
   4. gagal → 401 invalid_credentials (pesan generik, jangan bedakan email/password)
   5. user.status = SUSPENDED → 403 account_suspended
-  6. sukses:
+  6. user.status = PENDING_EMAIL → 403 email_not_verified
+       (login diblokir sampai email diverifikasi; UI `/login` menawarkan "Kirim ulang tautan verifikasi")
+  7. user.status = DEACTIVATED → 401 invalid_credentials (tanpa bocor)
+  8. sukses:
        - sid = nanoid()
        - token = signSession({ sub, role, sid })
        - set cookie auth_token (httpOnly) + csrf_token (non-httpOnly)
@@ -242,6 +245,8 @@ POST /api/auth/verify-email { token }
 ```
 
 Edge: token kedaluwarsa → 400 + UI tawarkan kirim ulang.
+
+Implementasi UI: halaman `/verify` (client component) memanggil endpoint ini saat dibuka, lalu menampilkan status **loading → berhasil (tombol "Masuk ke halaman login") → gagal (pesan + tombol "Kirim ulang" yang memanggil `POST /api/auth/resend-verification`)**. Halaman `/forgot-password` dan `/reset-password` mengikuti pola yang sama untuk alur reset.
 
 ---
 

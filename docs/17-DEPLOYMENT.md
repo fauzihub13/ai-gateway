@@ -30,8 +30,15 @@ Branch: `main` → prod; PR → preview (staging-like); `develop` (opsional) →
 | `MIDTRANS_CLIENT_KEY` | ya | publik | Midtrans client |
 | `MIDTRANS_IS_PRODUCTION` | ya | `false` | mode |
 | `APP_BASE_URL` | ya | `https://app.mpruy.ai` | base URL app |
-| `RESEND_API_KEY` | ya | rahasia | email |
+| `RESEND_API_KEY` | tidak | rahasia | email (transport `api`) |
+| `MAIL_TRANSPORT` | tidak | `smtp` | `smtp`/`api`/`console` |
+| `SMTP_HOST` | ya | `smtp.resend.com` | server SMTP |
+| `SMTP_PORT` | ya | `587` | 465/2465 SSL, 25/587/2587 STARTTLS |
+| `SMTP_SECURE` | tidak | auto | paksa SSL implisit |
+| `SMTP_USER` | ya | `resend` | username SMTP |
+| `SMTP_PASS` | ya | rahasia | API key Resend untuk SMTP |
 | `EMAIL_FROM` | ya | `noreply@mpruy.ai` | pengirim email |
+| `EMAIL_FROM_NAME` | tidak | `Mpruy AI` | nama pengirim |
 | `UPSTASH_REDIS_REST_URL` | ya | url | Redis |
 | `UPSTASH_REDIS_REST_TOKEN` | ya | token | Redis |
 | `SENTRY_DSN` | tidak | dsn | error tracking |

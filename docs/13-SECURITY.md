@@ -40,6 +40,7 @@ Threat model, secret management, API key security, network isolation, WAF/DDoS, 
 | `NINE_ROUTER_API_KEY` | env | saat insiden / berkala |
 | `MIDTRANS_SERVER_KEY` | env | saat insiden |
 | `RESEND_API_KEY` | env | berkala |
+| `SMTP_PASS` (Resend SMTP) | env | berkala (samakan dengan rotasi API key Resend) |
 | `UPSTASH_*` | env | berkala |
 
 Aturan:
@@ -59,6 +60,7 @@ MIDTRANS_SERVER_KEY=""
 MIDTRANS_CLIENT_KEY=""
 MIDTRANS_IS_PRODUCTION="false"
 RESEND_API_KEY=""
+SMTP_PASS=""
 UPSTASH_REDIS_REST_URL=""
 UPSTASH_REDIS_REST_TOKEN=""
 SENTRY_DSN=""

@@ -29,7 +29,12 @@ export async function POST(req: Request) {
           expiresAt: new Date(Date.now() + 3600_000),
         },
       });
-      await sendResetEmail(lower, raw).catch(() => undefined);
+      await sendResetEmail(lower, raw).catch((err) => {
+        console.error('send_reset_email_failed', {
+          requestId,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      });
     }
 
     return new Response(JSON.stringify({ ok: true }), {
