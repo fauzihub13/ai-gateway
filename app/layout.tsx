@@ -30,6 +30,16 @@ export const metadata: Metadata = {
   title: 'Mpruy AI — One API. Every AI Model.',
   description:
     'Gateway API terpadu untuk banyak provider AI. OpenAI-compatible, streaming SSE, pricing transparan per token.',
+  icons: {
+    // Square, aspect-preserving icons (glyph centered, never stretched).
+    // Black glyph is the default; the white glyph is served on dark schemes
+    // (honored by Firefox/Safari; Chrome falls back to the first entry).
+    icon: [
+      { url: '/icon.png', type: 'image/png', sizes: '512x512' },
+      { url: '/icon-white.png', type: 'image/png', sizes: '512x512', media: '(prefers-color-scheme: dark)' },
+    ],
+    apple: [{ url: '/apple-icon.png', type: 'image/png', sizes: '180x180' }],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

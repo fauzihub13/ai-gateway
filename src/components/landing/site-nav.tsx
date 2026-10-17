@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Menu, X, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Logo } from '@/components/logo';
 
 const LINKS = [
   { href: '/#models', label: 'Models' },
@@ -40,9 +41,7 @@ export function SiteNav() {
     >
       <div className="container flex h-16 items-center justify-between gap-6">
         <Link href="/" className="flex items-center gap-2.5" aria-label="Mpruy AI">
-          <span className="grid h-7 w-7 place-items-center border border-foreground bg-foreground font-display text-sm font-semibold text-background">
-            M
-          </span>
+          <Logo className="h-6" />
           <span className="font-display text-[15px] font-semibold tracking-tight">
             Mpruy<span className="text-electric">AI</span>
           </span>

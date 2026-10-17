@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { BookOpen, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { Logo } from '@/components/logo';
 
 const nav = [
   { id: 'quickstart', label: 'Quickstart' },
@@ -21,9 +22,7 @@ export default function DocsLayout({ children }: { children: React.ReactNode }) 
       <header className="sticky top-0 z-30 border-b border-hairline bg-background/85 backdrop-blur">
         <div className="container flex h-16 items-center justify-between gap-3">
           <Link href="/" className="flex min-w-0 items-center gap-2.5">
-            <span className="grid h-6 w-6 shrink-0 place-items-center border border-foreground bg-foreground font-display text-xs font-semibold text-background">
-              M
-            </span>
+            <Logo className="h-5" />
             <span className="font-display text-[13px] font-semibold tracking-tight">
               Mpruy<span className="text-electric">AI</span>
             </span>

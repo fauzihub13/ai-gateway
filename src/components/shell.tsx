@@ -33,6 +33,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Logo } from '@/components/logo';
 
 export type NavIcon =
   | 'dashboard'
@@ -111,9 +112,7 @@ export function Shell({
       >
         <div className="flex h-16 items-center justify-between border-b border-hairline px-5">
           <Link href={brandHref} className="flex items-center gap-2.5">
-            <span className="grid h-6 w-6 place-items-center border border-foreground bg-foreground font-display text-xs font-semibold text-background">
-              M
-            </span>
+            <Logo className="h-5" />
             <span className="font-display text-[13px] font-semibold tracking-tight">{brand}</span>
           </Link>
           <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setOpen(false)}>

@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ThemeToggle } from '@/components/theme-toggle';
+import { Logo } from '@/components/logo';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -55,9 +56,7 @@ export default function LoginPage() {
         <Card className="w-full max-w-sm">
           <CardHeader>
             <Link href="/" className="mb-3 flex items-center gap-2.5">
-              <span className="grid h-6 w-6 place-items-center border border-foreground bg-foreground font-display text-xs font-semibold text-background">
-                M
-              </span>
+              <Logo className="h-5" />
               <span className="font-display text-[13px] font-semibold tracking-tight">
                 Mpruy<span className="text-electric">AI</span>
               </span>

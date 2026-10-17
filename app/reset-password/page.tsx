@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { ResetPasswordClient } from './reset-client';
+import { Logo } from '@/components/logo';
 
 export const metadata = { title: 'Reset password · Mpruy AI' };
 
@@ -17,9 +18,7 @@ export default function ResetPasswordPage() {
         <Card className="w-full max-w-sm">
           <CardContent className="py-10">
             <Link href="/" className="mb-6 flex items-center justify-center gap-2.5">
-              <span className="grid h-6 w-6 place-items-center border border-foreground bg-foreground font-display text-xs font-semibold text-background">
-                M
-              </span>
+              <Logo className="h-5" />
               <span className="font-display text-[13px] font-semibold tracking-tight">
                 Mpruy<span className="text-electric">AI</span>
               </span>

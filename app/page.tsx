@@ -15,6 +15,7 @@ import { StreamNormalizer } from '@/components/landing/illustrations/stream-norm
 import { FailoverTopology } from '@/components/landing/illustrations/failover-topology';
 import { TokenMeter } from '@/components/landing/illustrations/token-meter';
 import { KeyFingerprint } from '@/components/landing/illustrations/key-fingerprint';
+import { Logo } from '@/components/logo';
 
 export const dynamic = 'force-dynamic';
 
@@ -476,9 +477,7 @@ export default async function Home() {
       <footer className="border-t border-hairline">
         <div className="container flex flex-col gap-6 py-10 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2.5">
-            <span className="grid h-6 w-6 place-items-center border border-foreground bg-foreground font-display text-xs text-background">
-              M
-            </span>
+            <Logo className="h-5" />
             <span className="font-display text-sm font-semibold">
               Mpruy<span className="text-electric">AI</span>
             </span>
