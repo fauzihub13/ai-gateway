@@ -14,6 +14,8 @@ const nav = [
   { id: 'errors', label: 'Error' },
   { id: 'ratelimits', label: 'Rate Limit' },
   { id: 'sdks', label: 'SDK & Library' },
+  { id: 'opencode-v2', label: 'OpenCode V2' },
+  { id: 'opencode-v1', label: 'OpenCode V1' },
 ];
 
 export default function DocsLayout({ children }: { children: React.ReactNode }) {

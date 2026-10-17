@@ -12,6 +12,7 @@ import {
   KeyRound,
   LogOut,
   Menu,
+  Plug,
   Receipt,
   ScrollText,
   Settings,
@@ -41,6 +42,7 @@ export type NavIcon =
   | 'usage'
   | 'billing'
   | 'sparkles'
+  | 'integration'
   | 'shield'
   | 'users'
   | 'models'
@@ -55,6 +57,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   usage: BarChart3,
   billing: Wallet,
   sparkles: Sparkles,
+  integration: Plug,
   shield: Shield,
   users: Users,
   models: Boxes,

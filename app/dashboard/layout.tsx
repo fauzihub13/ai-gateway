@@ -9,6 +9,7 @@ const items: NavItem[] = [
   { href: '/dashboard/usage', label: 'Usage', icon: 'usage' },
   { href: '/dashboard/billing', label: 'Billing', icon: 'billing' },
   { href: '/dashboard/playground', label: 'Playground', icon: 'sparkles' },
+  { href: '/dashboard/integration', label: 'Integration', icon: 'integration' },
 ];
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
