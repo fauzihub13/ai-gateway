@@ -53,11 +53,11 @@ export function computeCost(opts: {
 }
 ```
 
-Contoh: gpt-4o, plan pro (×1.35), 1.200 prompt + 800 completion:
+Contoh: mimo, plan free (×1), 1.200 prompt + 800 completion:
 ```
 inCost  = 1.2 * 4 = 4.8
 outCost = 0.8 * 12 = 9.6
-raw = (4.8 + 9.6) * 1.35 = 19.44 → ceil = Rp20
+raw = (4.8 + 9.6) * 1 = 9.6 → ceil = Rp10
 ```
 
 ---

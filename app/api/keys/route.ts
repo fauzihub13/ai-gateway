@@ -8,7 +8,9 @@ import { getRequestId, json } from '@/lib/http';
 
 export const runtime = 'nodejs';
 
-const MAX_KEYS: Record<string, number> = { basic: 3, pro: 10, enterprise: 50 };
+// Batas jumlah key aktif per plan. Plan yang tidak terdaftar memakai DEFAULT_MAX_KEYS.
+const DEFAULT_MAX_KEYS = 3;
+const MAX_KEYS: Record<string, number> = { free: 3 };
 
 const CreateSchema = z.object({
   name: z.string().min(1).max(50),
@@ -46,7 +48,7 @@ export async function POST(req: Request) {
     });
 
     const active = user.apiKeys.filter((k) => k.status !== 'REVOKED').length;
-    if (active >= (MAX_KEYS[user.plan.name] ?? 3)) {
+    if (active >= (MAX_KEYS[user.plan.name] ?? DEFAULT_MAX_KEYS)) {
       throw new ForbiddenError('key_limit_reached', 'Maximum number of active keys reached for your plan.');
     }
 

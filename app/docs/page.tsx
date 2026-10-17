@@ -40,7 +40,7 @@ export default async function DocsPage() {
   -H "Authorization: Bearer $MPRUY_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "gpt-4o",
+    "model": "mimo",
     "messages": [
       { "role": "user", "content": "Halo, perkenalkan dirimu singkat." }
     ],
@@ -51,7 +51,7 @@ export default async function DocsPage() {
   "id": "chatcmpl_...",
   "object": "chat.completion",
   "created": 1792135393,
-  "model": "gpt-4o",
+  "model": "mimo",
   "choices": [
     {
       "index": 0,
@@ -70,7 +70,7 @@ const client = new OpenAI({
 });
 
 const res = await client.chat.completions.create({
-  model: "gpt-4o",
+  model: "mimo",
   messages: [{ role: "user", content: "Halo!" }],
 });
 
@@ -84,7 +84,7 @@ client = OpenAI(
 )
 
 res = client.chat.completions.create(
-    model="gpt-4o",
+    model="mimo",
     messages=[{"role": "user", "content": "Halo!"}],
 )
 
@@ -97,7 +97,7 @@ print(res.choices[0].message.content)`;
     "Content-Type": "application/json",
   },
   body: JSON.stringify({
-    model: "gpt-4o",
+    model: "mimo",
     messages: [{ role: "user", content: "Tulis puisi pendek." }],
     stream: true,
   }),
@@ -119,9 +119,9 @@ while (true) {
   }
 }`;
 
-  const streamRaw = `data: {"id":"chatcmpl_...","object":"chat.completion.chunk","model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":"Ha"}}]}
+  const streamRaw = `data: {"id":"chatcmpl_...","object":"chat.completion.chunk","model":"mimo","choices":[{"index":0,"delta":{"role":"assistant","content":"Ha"}}]}
 
-data: {"id":"chatcmpl_...","object":"chat.completion.chunk","model":"gpt-4o","choices":[{"index":0,"delta":{"content":"lo!"}}]}
+data: {"id":"chatcmpl_...","object":"chat.completion.chunk","model":"mimo","choices":[{"index":0,"delta":{"content":"lo!"}}]}
 
 data: [DONE]`;
 
@@ -129,7 +129,7 @@ data: [DONE]`;
   -H "Authorization: Bearer $MPRUY_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
-    "model": "gpt-4o-mini",
+    "model": "mimo",
     "input": "teks yang ingin di-embed"
   }'`;
 
@@ -346,6 +346,10 @@ data: [DONE]`;
           vektor embedding dari teks.
         </p>
         <CodeBlock filename="curl" code={embedCurl} />
+        <Note>
+          Embeddings hanya tersedia untuk model yang mendukung kapabilitas embedding. Cek{' '}
+          <code className="rounded bg-muted px-1.5 py-0.5 text-xs">GET {api}/models</code> untuk model yang tersedia.
+        </Note>
       </Section>
 
       <Section id="errors" title="Error">

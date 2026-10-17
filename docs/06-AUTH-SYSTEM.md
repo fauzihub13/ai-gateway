@@ -226,7 +226,7 @@ POST /api/auth/register { email, password, name? }
   2. validasi Zod
   3. cek email ada? (jika ada: tetap balas 201, kirim email "sudah terdaftar")
   4. hashPassword
-  5. create User(status=PENDING_EMAIL, plan=basic)
+  5. resolve plan default register (`getDefaultSignupPlan()`, env `SIGNUP_PLAN`, default `free`) → create User(status=PENDING_EMAIL, plan=free)
   6. token = randomBytes(32) ; simpan VerificationToken{ tokenHash=sha256(token), type=EMAIL_VERIFY, expires 24h }
   7. email link: https://app.mpruy.ai/verify?token=<token>
   8. balas 201 { ok: true }

@@ -56,7 +56,7 @@ Aksi per baris: Detail, Suspend/Unsuspend, Adjust saldo.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  user@example.com   [ACTIVE]  plan: pro         [Suspend]      │
+│  user@example.com   [ACTIVE]  plan: free         [Suspend]      │
 │  Saldo: Rp84.200   [Adjust saldo]   Terdaftar: 2024-06-01      │
 ├──────────────────────────────────────────────────────────────┤
 │  Tabs: [Keys] [Usage] [Transactions] [Ledger] [Audit]          │
@@ -80,11 +80,9 @@ Form tambah/edit (lihat [08](./08-MODEL-MAPPING.md)). Aksi: aktif/nonaktif, depr
 Ubah markup, rpm, monthlyTokenLimit, monthlyPriceIdr, akses model (matrix plan × model).
 
 ```
-Plan × Model matrix:
-              gpt-4o  gpt-4o-mini  claude-sonnet  gemini
-basic          [ ]      [x]           [ ]           [ ]
-pro            [x]      [x]           [x]           [ ]
-enterprise     [x]      [x]           [x]           [x]
+Plan × Model matrix (contoh):
+              mimo
+free          [x]
 ```
 
 ### 3.6 Transactions `/admin/transactions`

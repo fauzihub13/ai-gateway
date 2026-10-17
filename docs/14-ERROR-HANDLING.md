@@ -126,7 +126,7 @@ Contoh:
 
 ## 4. Mapping error 9Router → publik
 
-9Router mengembalikan error OpenAI-style (karena kompatibel). Namun bisa mengandung detail internal (nama model `gh/...`, pesan provider). **Selalu sanitisasi.**
+9Router mengembalikan error OpenAI-style (karena kompatibel). Namun bisa mengandung detail internal (nama model seperti `mimo-free`, pesan provider). **Selalu sanitisasi.**
 
 ```ts
 export async function mapUpstreamError(res: Response, requestId: string): Promise<Response> {
@@ -154,7 +154,7 @@ export async function mapUpstreamError(res: Response, requestId: string): Promis
 }
 ```
 
-**Aturan kunci:** pesan dari upstream tidak pernah diteruskan apa adanya ke user (bisa bocorkan `gh/gpt-4o`, nama provider, dll).
+**Aturan kunci:** pesan dari upstream tidak pernah diteruskan apa adanya ke user (bisa bocorkan `mimo-free`, nama provider, dll).
 
 ---
 
@@ -240,7 +240,7 @@ Struktur log (JSON):
   "level": "error",
   "requestId": "req_9f2a",
   "userId": "usr_1",
-  "model": "gpt-4o",
+  "model": "mimo",
   "endpoint": "chat.completions",
   "status": 502,
   "code": "upstream_error",

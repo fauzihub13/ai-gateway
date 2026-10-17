@@ -26,7 +26,7 @@ export function RequestPlayground({
   models: PlaygroundModel[];
   baseUrl?: string;
 }) {
-  const [model, setModel] = useState(models[0]?.publicName ?? 'gpt-4o');
+  const [model, setModel] = useState(models[0]?.publicName ?? 'mimo');
   const [tab, setTab] = useState<'curl' | 'ts'>('curl');
   const [copied, setCopied] = useState(false);
   const [running, setRunning] = useState(false);
@@ -137,7 +137,7 @@ const reader = res.body!.getReader();`;
               onChange={(e) => setModel(e.target.value)}
               className="h-7 rounded-sm border border-hairline bg-background px-2 font-mono text-[11px] text-foreground outline-none focus-visible:border-electric"
             >
-              {models.length === 0 && <option value="gpt-4o">gpt-4o</option>}
+              {models.length === 0 && <option value="mimo">mimo</option>}
               {models.map((m) => (
                 <option key={m.publicName} value={m.publicName}>
                   {m.publicName}

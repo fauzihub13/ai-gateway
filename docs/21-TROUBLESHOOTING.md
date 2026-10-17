@@ -53,7 +53,7 @@ Debug:
 ```bash
 curl -N https://api.mpruy.ai/v1/chat/completions \
   -H "Authorization: Bearer sk-mpruy-xxx" -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"stream":true}'
+  -d '{"model":"mimo","messages":[{"role":"user","content":"hi"}],"stream":true}'
 ```
 
 `-N` matikan buffering curl. Lihat [09-STREAMING.md](./09-STREAMING.md).
@@ -170,7 +170,7 @@ Lihat [18-MONITORING.md](./18-MONITORING.md).
 ## 7. Model mapping issues
 
 ```
-[ ] User kirim internalName (gh/gpt-4o) → 404 (benar, jangan bocor)
+[ ] User kirim internalName (mimo-free) → 404 (benar, jangan bocor)
 [ ] Model ada di 9Router tapi 404 di platform → belum didaftarkan di DB
 [ ] Harga jual salah → cek priceIn/OutPer1kIdr & markup plan
 [ ] Model deprecated masih muncul → cek isActive

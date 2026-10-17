@@ -12,10 +12,10 @@
 |---|---|
 | Base URL `https://api.mpruy.ai/v1` | URL 9Router |
 | API key terbitan kami (`sk-mpruy-xxx`) | Gateway key 9Router |
-| Nama model versi kami (`gpt-4o`) | Nama internal model (`gh/gpt-4o`) |
+| Nama model versi kami (`mimo`) | Nama internal model (`mimo-free`) |
 | Harga jual kami | Harga upstream provider |
 | Dashboard kami | Dashboard 9Router |
-| — | Provider upstream (GitHub Copilot, Kiro, Antigravity, dll) |
+| — | Provider upstream (identitas provider asli model) |
 
 Detail konsep abstraksi model → [08-MODEL-MAPPING.md](./08-MODEL-MAPPING.md)
 
@@ -25,7 +25,7 @@ Detail konsep abstraksi model → [08-MODEL-MAPPING.md](./08-MODEL-MAPPING.md)
 
 1. Auth user (register, login, verify email)
 2. Generate & manage API key user (multiple keys, revoke, rate limit per key)
-3. Pilih plan (basic, pro, enterprise) dengan limit & akses model berbeda
+3. Plan dengan limit & akses model berbeda (saat ini hanya plan `free`; plan tambahan dibuat dari admin)
 4. Top-up saldo via payment gateway (Midtrans)
 5. Endpoint proxy `/v1/chat/completions` & `/v1/models` yang forward ke 9Router
 6. Streaming SSE support (normalisasi output ke spec OpenAI)
@@ -88,8 +88,8 @@ Aturan konsisten di seluruh dokumentasi:
 
 ### 5.1 Model
 
-- **Public model name** (yang user kirim): `gpt-4o`, `claude-sonnet-4.5`, `gemini-1.5-pro`
-- **Internal model name** (format 9Router): `{prefix}/{model}` → `gh/gpt-4o`, `kr/claude-sonnet-4.5`
+- **Public model name** (yang user kirim): `mimo`
+- **Internal model name** (id di 9Router): `mimo-free` (atau berprefiks, mis. `tbr/mimo-v2.5`)
 
 Mapping disimpan di tabel `Model` (lihat [04-DATABASE-SCHEMA.md](./04-DATABASE-SCHEMA.md)).
 
@@ -124,12 +124,12 @@ Jangan pernah campur keduanya. Platform **menerjemahkan** user API key menjadi r
 | **9Router** | AI gateway internal, OpenAI-compatible, menyimpan kredensial upstream & routing |
 | **Gateway key** | Kredensial ke 9Router, hanya dipakai server platform |
 | **User API key** | Kredensial `sk-mpruy-xxx` yang diterbitkan platform ke user |
-| **Public model** | Nama model versi kami (`gpt-4o`) |
-| **Internal model** | Nama model di 9Router (`gh/gpt-4o`) |
-| **Plan** | Paket langganan (basic/pro/enterprise) dengan limit & akses model |
+| **Public model** | Nama model versi kami (`mimo`) |
+| **Internal model** | Nama model di 9Router (`mimo-free`) |
+| **Plan** | Paket dengan limit & akses model (saat ini hanya `free`) |
 | **Balance** | Saldo Rupiah user, dipotong per request |
 | **Usage log** | Catatan satu request (token in/out, biaya, model, status) |
-| **Upstream** | Provider asli model (GitHub Copilot, Anthropic, dll) |
+| **Upstream** | Provider asli model (rahasia, jangan pernah dibocorkan) |
 | **Markup** | Selisih harga jual kami di atas cost upstream |
 | **SSE** | Server-Sent Events, protokol streaming token |
 | **Idempotency** | Jaminan operasi sama tidak dobel efek (billing/webhook) |
@@ -170,7 +170,7 @@ User ──Authorization: Bearer sk-mpruy-xxx──▶ Platform /v1/chat/complet
                                                 │
                                     1. auth: hash & lookup ApiKey
                                     2. rate limit (Redis)
-                                    3. resolve model: gpt-4o → gh/gpt-4o
+                                    3. resolve model: mimo → mimo-free
                                     4. cek saldo & akses plan
                                                 │
                                                 ▼

@@ -7,13 +7,13 @@ Konsep abstraksi public vs internal model, struktur tabel mapping, cara kelola m
 ## 1. Konsep abstraksi
 
 ```
-User kirim:      model = "gpt-4o"          ← PUBLIC (yang user tahu)
+User kirim:      model = "mimo"           ← PUBLIC (yang user tahu)
 Platform map:    publicName → internalName
-Platform kirim:  model = "gh/gpt-4o"        ← INTERNAL (9Router format)
+Platform kirim:  model = "mimo-free"      ← INTERNAL (id model di 9Router)
 ```
 
 Manfaat:
-1. **Menyembunyikan provider upstream** (GitHub Copilot `gh/`, Kiro `kr/`, Google `gm/`).
+1. **Menyembunyikan provider upstream** (id model di 9Router bisa berprefiks seperti `ag/`, `tbr/`, `bzr/`).
 2. **Stabilkan nama** — provider bisa ganti routing tanpa ubah API kami.
 3. **Kontrol harga & akses per plan** di satu tempat.
 4. **Deprecation terkendali** tanpa menyentuh user.
@@ -24,12 +24,15 @@ Aturan: **nama internal tidak boleh pernah keluar** dari server. Rewrite di resp
 
 ## 2. Prefiks internal (9Router) — RAHASIA
 
-| Prefiks | Provider | Contoh internal |
+| Prefiks/id | Upstream | Contoh internal |
 |---|---|---|
-| `gh/` | GitHub Copilot | `gh/gpt-4o` |
-| `kr/` | Kiro | `kr/claude-sonnet-4.5` |
-| `gm/` | Google (Antigravity/Gemini) | `gm/gemini-1.5-pro` |
-| `an/` | Anthropic | `an/claude-3-5-haiku` |
+| `ag/` | upstream #1 (rahasia) | `ag/gemini-3.8-flash` |
+| `tbr/` | upstream #2 (rahasia) | `tbr/mimo-v2.5` |
+| `bzr/` | upstream #3 (rahasia) | `bzr/deepseek-v4-pro` |
+| `gcli/` | upstream #4 (rahasia) | `gcli/grok-4.5` |
+| (tanpa prefiks) | model combo 9Router | `mimo-free` |
+
+Daftar prefiks di atas adalah contoh dari 9Router dan bisa bertambah/berubah. `internalName` di tabel `Model` **harus persis** sama dengan `id` yang dikembalikan `GET {9Router}/v1/models`.
 
 Tabel ini **tidak pernah** ditampilkan ke user, tidak masuk API response, tidak masuk dokumentasi publik.
 
@@ -39,9 +42,9 @@ Tabel ini **tidak pernah** ditampilkan ke user, tidak masuk API response, tidak 
 
 | Kolom | Fungsi |
 |---|---|
-| `publicName` | id yang user kirim (`gpt-4o`), UNIQUE |
-| `internalName` | yang dikirim ke 9Router (`gh/gpt-4o`) |
-| `displayName` | label UI ("GPT-4o") |
+| `publicName` | id yang user kirim (`mimo`), UNIQUE |
+| `internalName` | yang dikirim ke 9Router (`mimo-free`) |
+| `displayName` | label UI ("MiMo") |
 | `description` | deskripsi singkat untuk docs/UI |
 | `contextWindow` | maks token konteks |
 | `maxOutputTokens` | maks output |
@@ -66,12 +69,9 @@ cost_idr = ceil( (promptTokens/1000) × priceInPer1kIdr × plan.markup
 
 ### 4.1 Contoh harga
 
-| Model | In/1k (dasar) | Out/1k (dasar) | basic (×1.5) | pro (×1.35) | enterprise (×1.2) |
-|---|---|---|---|---|---|
-| gpt-4o | Rp4 | Rp12 | Rp6 / Rp18 | Rp5.4 / Rp16.2 | Rp4.8 / Rp14.4 |
-| gpt-4o-mini | Rp1 | Rp3 | Rp1.5 / Rp4.5 | Rp1.35 / Rp4.05 | Rp1.2 / Rp3.6 |
-| claude-sonnet-4.5 | Rp5 | Rp18 | Rp7.5 / Rp27 | Rp6.75 / Rp24.3 | Rp6 / Rp21.6 |
-| gemini-1.5-pro | Rp3 | Rp10 | Rp4.5 / Rp15 | Rp4.05 / Rp13.5 | Rp3.6 / Rp12 |
+| Model | In/1k (dasar) | Out/1k (dasar) | free (×1) |
+|---|---|---|---|
+| mimo | Rp4 | Rp12 | Rp4 / Rp12 |
 
 > Harga dasar `priceInPer1kIdr`/`priceOutPer1kIdr` diset **di atas cost upstream**. Markup plan menambah margin. Simpan harga dasar sebagai angka bulat (IDR) — bila perlu pecahan, simpan dalam satuan lebih kecil (mis. per 1000 token dalam milirupiah) dan konversi saat hitung.
 
@@ -85,11 +85,11 @@ Bila tiap plan butuh harga final berbeda yang tidak linear, tambahkan tabel `Pla
 
 ```json
 {
-  "publicName": "gpt-4o",
-  "displayName": "GPT-4o",
-  "contextWindow": 128000,
-  "priceInPer1kIdr": 6,
-  "priceOutPer1kIdr": 18,
+  "publicName": "mimo",
+  "displayName": "MiMo",
+  "contextWindow": 1048576,
+  "priceInPer1kIdr": 4,
+  "priceOutPer1kIdr": 12,
   "capabilities": { "stream": true, "vision": true, "tools": true, "jsonMode": true }
 }
 ```
@@ -124,13 +124,13 @@ Validasi request: bila user kirim `tools` tapi model `tools=false` → 400 `inva
 
 Dukung dua tipe:
 
-1. **Alias** (disarankan): `gpt-4o` selalu menunjuk versi terbaik. `internalName` boleh diubah admin tanpa breaking API.
-2. **Pinned version**: `gpt-4o-2024-08` sebagai publicName terpisah → `internalName` tetap. Berguna untuk user yang butuh stabilitas.
+1. **Alias** (disarankan): `mimo` selalu menunjuk versi terbaik. `internalName` boleh diubah admin tanpa breaking API.
+2. **Pinned version**: mis. `mimo-v2.5` sebagai publicName terpisah dengan `internalName` `tbr/mimo-v2.5`. Berguna untuk user yang butuh stabilitas.
 
 ```
-publicName            internalName
-gpt-4o          →     gh/gpt-4o            (alias, ikut versi terbaru)
-gpt-4o-2024-08  →     gh/gpt-4o-2024-08    (pinned)
+publicName        internalName
+mimo        →     mimo-free        (alias, ikut model combo 9Router)
+mimo-v2.5   →     tbr/mimo-v2.5    (pinned ke upstream tertentu)
 ```
 
 Aturan: **jangan ubah `publicName`** (breaking). Boleh ubah `internalName` (transparan).
@@ -149,13 +149,13 @@ Aturan: **jangan ubah `publicName`** (breaking). Boleh ubah `internalName` (tran
 curl -X POST https://app.mpruy.ai/api/admin/models \
   -H "Content-Type: application/json" -b admin_cookies.txt \
   -d '{
-    "publicName": "gpt-4o-mini",
-    "internalName": "gh/gpt-4o-mini",
-    "displayName": "GPT-4o mini",
-    "contextWindow": 128000,
-    "maxOutputTokens": 16384,
-    "priceInPer1kIdr": 1,
-    "priceOutPer1kIdr": 3,
+    "publicName": "mimo",
+    "internalName": "mimo-free",
+    "displayName": "MiMo",
+    "contextWindow": 1048576,
+    "maxOutputTokens": 131072,
+    "priceInPer1kIdr": 4,
+    "priceOutPer1kIdr": 12,
     "capabilities": { "stream": true, "vision": true, "tools": true, "jsonMode": true }
   }'
 ```
@@ -174,7 +174,7 @@ curl -X POST https://app.mpruy.ai/api/admin/models \
 - Request ke model tsb → 404 `model_not_found` (atau pesan deprecation bila disediakan alias pengganti).
 
 ```json
-{ "error": { "message": "Model gpt-4-legacy has been deprecated. Use gpt-4o instead.", "type": "invalid_request_error", "code": "model_deprecated" } }
+{ "error": { "message": "Model mimo-v1 has been deprecated. Use mimo instead.", "type": "invalid_request_error", "code": "model_deprecated" } }
 ```
 
 ---
@@ -193,7 +193,7 @@ DB publicName set ───┘            - model di 9Router tapi belum di DB (k
 ```ts
 async function syncModels() {
   const res = await nineRouterFetch('/v1/models');
-  const upstream = (await res.json()).data.map((m: any) => m.id); // ex: gh/gpt-4o
+  const upstream = (await res.json()).data.map((m: any) => m.id); // ex: mimo-free, tbr/mimo-v2.5
   const local = await db.model.findMany({ where: { isActive: true } });
   const known = new Set(local.map((m) => m.internalName));
 
@@ -231,7 +231,7 @@ Invalidasi cache saat admin ubah model (`redis.del('models:map')`).
 
 | Kasus | Penanganan |
 |---|---|
-| User kirim `internalName` langsung (`gh/gpt-4o`) | tidak ada di map → 404 `model_not_found` (internal tak bocor) |
+| User kirim `internalName` langsung (`mimo-free`) | tidak ada di map → 404 `model_not_found` (internal tak bocor) |
 | internalName berubah tapi user pakai alias | transparan |
 | 9Router tolak internal model | 502 `upstream_error` (jangan bocorkan internal) |
 | Harga dasar 0 (gratis) | tetap valid, markup tidak berpengaruh |

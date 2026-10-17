@@ -74,11 +74,11 @@ Sitemap, wireframe tiap halaman, komponen reusable, design system, responsive, a
 │   └──────────────────────────────────────────────────────────┘  │
 │                                                                │
 ├──────────────────────────────────────────────────────────────┤
-│  Logos model: gpt-4o  claude-sonnet-4.5  gemini-1.5-pro  ...   │
+│  Logos model: mimo  ...                                          │
 ├──────────────────────────────────────────────────────────────┤
 │  Fitur:  [OpenAI-compatible] [Streaming] [Dashboard] [SSE]    │
 ├──────────────────────────────────────────────────────────────┤
-│  Harga ringkas (3 kartu plan)                                  │
+│  Harga ringkas (kartu plan)                                    │
 ├──────────────────────────────────────────────────────────────┤
 │  FAQ                                                            │
 ├──────────────────────────────────────────────────────────────┤
@@ -92,15 +92,17 @@ Sitemap, wireframe tiap halaman, komponen reusable, design system, responsive, a
 ┌──────────────────────────────────────────────────────────────┐
 │  Pilih plan sesuai kebutuhan                                   │
 │                                                                │
-│  ┌─ Basic ────┐  ┌─ Pro ──────┐  ┌─ Enterprise ┐              │
-│  │ Rp0        │  │ Rp199rb/bl │  │ Rp999rb/bl   │              │
-│  │ 60 req/mnt │  │ 300 req/mnt│  │ 1200 req/mnt │              │
-│  │ model mini │  │ + claude   │  │ semua model  │              │
-│  │ 5jt tok/bl │  │ 50jt tok/bl│  │ unlimited    │              │
-│  │ [Pilih]    │  │ [Pilih]    │  │ [Hubungi]    │              │
-│  └────────────┘  └────────────┘  └──────────────┘             │
+│  Kartu plan dirender dari tabel Plan (aktif), urut harga.      │
+│  Saat ini hanya satu plan:                                     │
+│  ┌─ Free ─────┐                                                │
+│  │ Rp0        │                                                │
+│  │ 100 req/mnt│                                                │
+│  │ model mimo │                                                │
+│  │ 20jt tok/bl│                                                │
+│  │ [Pilih]    │                                                │
+│  └────────────┘                                                │
 │                                                                │
-│  Tabel harga per model (harga final per plan, dropdown plan)   │
+│  Tabel harga per model (harga final, sudah termasuk markup)    │
 │  Model | Input/1k | Output/1k | Konteks                        │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -231,7 +233,7 @@ Sitemap, wireframe tiap halaman, komponen reusable, design system, responsive, a
 │ Filter: [status ▼][plan ▼][search ____]      [Export CSV]      │
 │                                                                │
 │ Tabel: email | plan | status | saldo | req30d | biaya | aksi    │
-│  user@x.com | pro | ACTIVE | Rp12k | 1.2k | Rp12k | [Detail]   │
+│  user@x.com | free | ACTIVE | Rp12k | 1.2k | Rp12k | [Detail]   │
 └──────────────────────────────────────────────────────────────┘
 ```
 

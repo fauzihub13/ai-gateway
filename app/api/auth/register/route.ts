@@ -6,6 +6,7 @@ import { sendVerifyEmail } from '@/lib/email';
 import { toErrorResponse, BadRequestError } from '@/lib/errors';
 import { getRequestId, getClientIp, json } from '@/lib/http';
 import { checkLimit } from '@/lib/ratelimit';
+import { getDefaultSignupPlan } from '@/lib/plans';
 
 export const runtime = 'nodejs';
 
@@ -27,14 +28,14 @@ export async function POST(req: Request) {
 
     const existing = await db.user.findUnique({ where: { email } });
     if (!existing) {
-      const basic = await db.plan.findUniqueOrThrow({ where: { name: 'basic' } });
+      const plan = await getDefaultSignupPlan();
       const user = await db.user.create({
         data: {
           email,
           passwordHash: await hashPassword(body.password),
           name: body.name ?? null,
           status: 'PENDING_EMAIL',
-          planId: basic.id,
+          planId: plan.id,
         },
       });
       const { raw, hash } = generateVerificationToken();

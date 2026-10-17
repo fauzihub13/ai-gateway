@@ -48,12 +48,12 @@ import { computeCost } from '@/lib/billing';
 
 describe('computeCost', () => {
   const model = { priceInPer1kIdr: 4, priceOutPer1kIdr: 12 };
-  const plan = { markup: 1.35 };
+  const plan = { markup: 1 };
 
   it('menghitung in+out dengan markup dan ceil', () => {
     const c = computeCost({ model, plan, promptTokens: 1200, completionTokens: 800 });
-    // (1.2*4 + 0.8*12) * 1.35 = 19.44 → 20
-    expect(c).toBe(20);
+    // (1.2*4 + 0.8*12) * 1 = 9.6 → 10
+    expect(c).toBe(10);
   });
 
   it('ceil ke rupiah untuk pecahan kecil', () => {
@@ -87,8 +87,8 @@ it('format key benar & hash deterministik dengan pepper', () => {
 
 ```ts
 it('tidak pernah mengembalikan internalName ke publik', async () => {
-  const v = publicModelView({ publicName: 'gpt-4o', internalName: 'gh/gpt-4o' });
-  expect(JSON.stringify(v)).not.toContain('gh/');
+  const v = publicModelView({ publicName: 'mimo', internalName: 'mimo-free' });
+  expect(JSON.stringify(v)).not.toContain('mimo-free');
 });
 ```
 
@@ -108,7 +108,7 @@ const mock9Router = setupServer(
     const body: any = await request.json();
     // assert platform selalu kirim stream eksplisit
     expect(body.stream).toBe(false);
-    expect(body.model).toBe('gh/gpt-4o'); // internal
+    expect(body.model).toBe('mimo-free'); // internal
     return HttpResponse.json({
       id: 'chatcmpl-1', object: 'chat.completion', created: 1, model: body.model,
       choices: [{ index: 0, message: { role: 'assistant', content: 'Halo!' }, finish_reason: 'stop' }],
@@ -125,7 +125,7 @@ it('chat completion memotong saldo & catat usage', async () => {
   const { rawKey } = await createTestKey({ balance: 1000 });
   const res = await POST('/v1/chat/completions', {
     headers: { Authorization: `Bearer ${rawKey}` },
-    body: { model: 'gpt-4o', messages: [{ role: 'user', content: 'Halo' }], stream: false },
+    body: { model: 'mimo', messages: [{ role: 'user', content: 'Halo' }], stream: false },
   });
   expect(res.status).toBe(200);
   const user = await db.user.findFirstOrThrow();
@@ -158,10 +158,10 @@ it('webhook dobel tidak menambah saldo dua kali', async () => {
 ```ts
 it('error upstream tidak bocorkan nama internal', async () => {
   mock9Router.use(http.post('*/v1/chat/completions', () =>
-    HttpResponse.json({ error: { message: 'model gh/gpt-4o not found' } }, { status: 404 })));
-  const res = await POST('/v1/chat/completions', { headers: auth(), body: { model: 'gpt-4o', messages: [], stream: false } });
+    HttpResponse.json({ error: { message: 'model mimo-free not found' } }, { status: 404 })));
+  const res = await POST('/v1/chat/completions', { headers: auth(), body: { model: 'mimo', messages: [], stream: false } });
   const text = await res.text();
-  expect(text).not.toContain('gh/');
+  expect(text).not.toContain('mimo-free');
 });
 ```
 
@@ -180,8 +180,8 @@ http.post('*/v1/chat/completions', () => {
   const enc = new TextEncoder();
   const stream = new ReadableStream({
     start(c) {
-      c.enqueue(enc.encode('data: {"model":"gh/gpt-4o","choices":[{"delta":{"content":"Ha"},"finish_reason":null}]}\n\n'));
-      c.enqueue(enc.encode('data: {"model":"gh/gpt-4o","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}\n\n'));
+      c.enqueue(enc.encode('data: {"model":"mimo-free","choices":[{"delta":{"content":"Ha"},"finish_reason":null}]}\n\n'));
+      c.enqueue(enc.encode('data: {"model":"mimo-free","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1,"total_tokens":4}}\n\n'));
       // sengaja TANPA [DONE] untuk menguji inject
       c.close();
     },
@@ -254,7 +254,7 @@ const KEY = __ENV.MPRUY_KEY;
 
 export default function () {
   const res = http.post('https://api.mpruy.ai/v1/chat/completions', JSON.stringify({
-    model: 'gpt-4o-mini',
+    model: 'mimo',
     messages: [{ role: 'user', content: 'ping' }],
     stream: false,
   }), { headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${KEY}` } });
@@ -293,7 +293,7 @@ Tool: `npm audit`, `gitleaks`, ZAP scan opsional pada staging.
 
 ```ts
 export async function createTestUser(overrides: Partial<any> = {}) {
-  const plan = await db.plan.findFirstOrThrow({ where: { name: 'basic' } });
+  const plan = await db.plan.findFirstOrThrow({ where: { name: 'free' } });
   return db.user.create({ data: {
     email: `t${Date.now()}${Math.random()}@test.com`,
     passwordHash: await hashPassword('Password123'),

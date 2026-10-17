@@ -39,7 +39,7 @@ Kontrak API publik (OpenAI-compatible) dan internal platform. Format error sesua
 
 | Field | Tipe | Wajib | Catatan |
 |---|---|---|---|
-| `model` | string | ya | public model (`gpt-4o`) |
+| `model` | string | ya | public model (`mimo`) |
 | `messages` | array | ya | `[{ role, content }]` |
 | `stream` | boolean | tidak | default `false` (platform selalu kirim eksplisit) |
 | `temperature` | number | tidak | 0–2 |
@@ -60,7 +60,7 @@ curl https://api.mpruy.ai/v1/chat/completions \
   -H "Authorization: Bearer sk-mpruy-xxxx" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "gpt-4o",
+    "model": "mimo",
     "messages": [
       { "role": "system", "content": "You are a helpful assistant." },
       { "role": "user", "content": "Halo, apa kabar?" }
@@ -76,7 +76,7 @@ curl https://api.mpruy.ai/v1/chat/completions \
   "id": "chatcmpl-9f2a1b3c4d",
   "object": "chat.completion",
   "created": 1723802400,
-  "model": "gpt-4o",
+  "model": "mimo",
   "choices": [
     {
       "index": 0,
@@ -110,9 +110,7 @@ curl https://api.mpruy.ai/v1/models \
 {
   "object": "list",
   "data": [
-    { "id": "gpt-4o", "object": "model", "created": 1723802400, "owned_by": "mpruy" },
-    { "id": "gpt-4o-mini", "object": "model", "created": 1723802400, "owned_by": "mpruy" },
-    { "id": "claude-sonnet-4.5", "object": "model", "created": 1723802400, "owned_by": "mpruy" }
+    { "id": "mimo", "object": "model", "created": 1723802400, "owned_by": "mpruy" }
   ]
 }
 ```
@@ -123,7 +121,7 @@ curl https://api.mpruy.ai/v1/models \
 
 ```json
 {
-  "id": "gpt-4o",
+  "id": "mimo",
   "object": "model",
   "created": 1723802400,
   "owned_by": "mpruy"
@@ -155,7 +153,7 @@ curl https://api.mpruy.ai/v1/embeddings \
 Berguna untuk SDK/tooling yang memverifikasi key.
 
 ```json
-{ "valid": true, "plan": "pro", "balance_idr": 84200 }
+{ "valid": true, "plan": "free", "balance_idr": 84200 }
 ```
 
 ---
@@ -235,7 +233,7 @@ curl -X POST https://app.mpruy.ai/api/auth/login \
 ```json
 {
   "user": { "id": "usr_1", "email": "user@example.com", "name": "Budi", "role": "USER" },
-  "plan": "pro",
+  "plan": "free",
   "balance": 84200
 }
 ```
@@ -252,7 +250,7 @@ curl -X POST https://app.mpruy.ai/api/auth/login \
 ```bash
 curl -X POST https://app.mpruy.ai/api/keys \
   -H "Content-Type: application/json" -b cookies.txt \
-  -d '{ "name": "Production", "scope": "MODELS", "models": ["gpt-4o"], "rpmLimit": 120 }'
+  -d '{ "name": "Production", "scope": "MODELS", "models": ["mimo"], "rpmLimit": 120 }'
 ```
 
 ```json

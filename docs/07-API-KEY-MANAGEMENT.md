@@ -112,7 +112,7 @@ create ──▶ ACTIVE ──revoke──▶ REVOKED (terminal)
 | `DELETE /api/keys/:id` | set REVOKED + revokedAt, tidak dihapus (audit) |
 | otomatis | `expiresAt < now` → dianggap EXPIRED saat verifikasi |
 
-Multiple keys: **satu user boleh punya banyak key** (mis. per lingkungan: dev/staging/prod). Batas jumlah key per plan (mis. basic 3, pro 10, enterprise 50).
+Multiple keys: **satu user boleh punya banyak key** (mis. per lingkungan: dev/staging/prod). Batas jumlah key per plan (mis. `free` 3; plan lain memakai default 3 sampai ditambahkan ke `MAX_KEYS`).
 
 ---
 
@@ -153,8 +153,10 @@ async function createKey(userId: string, input: unknown) {
   const data = CreateKeySchema.parse(input);
   const user = await db.user.findUniqueOrThrow({ where: { id: userId }, include: { plan: true, apiKeys: true } });
 
-  const MAX_KEYS: Record<string, number> = { basic: 3, pro: 10, enterprise: 50 };
-  if (user.apiKeys.filter((k) => k.status !== 'REVOKED').length >= MAX_KEYS[user.plan.name]) {
+  // Batas jumlah key aktif per plan; plan tak terdaftar memakai DEFAULT_MAX_KEYS.
+  const DEFAULT_MAX_KEYS = 3;
+  const MAX_KEYS: Record<string, number> = { free: 3 };
+  if (user.apiKeys.filter((k) => k.status !== 'REVOKED').length >= (MAX_KEYS[user.plan.name] ?? DEFAULT_MAX_KEYS)) {
     throw new ForbiddenError('key_limit_reached');
   }
 

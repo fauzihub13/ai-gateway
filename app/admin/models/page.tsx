@@ -77,7 +77,7 @@ export default function AdminModelsPage() {
       const res = await fetch('/api/admin/models', {
         method: isEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCookie('csrf_token') },
-        body: JSON.stringify({ ...form, plans: isEdit ? undefined : ['basic', 'pro', 'enterprise'] }),
+        body: JSON.stringify({ ...form, plans: isEdit ? undefined : ['free'] }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -160,7 +160,7 @@ export default function AdminModelsPage() {
                 value={form.publicName}
                 disabled={Boolean(editing)}
                 onChange={(e) => setForm({ ...form, publicName: e.target.value })}
-                placeholder="gpt-4o"
+                placeholder="mimo"
               />
             </div>
             <div className="space-y-2">
@@ -168,7 +168,7 @@ export default function AdminModelsPage() {
               <Input
                 value={form.internalName}
                 onChange={(e) => setForm({ ...form, internalName: e.target.value })}
-                placeholder="gh/gpt-4o"
+                placeholder="mimo-free"
               />
             </div>
             <div className="space-y-2">

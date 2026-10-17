@@ -69,8 +69,8 @@ Dokumen ini menjelaskan arsitektur makro platform Mpruy AI: komponen, boundary t
               ┌──────────────────────────┼──────────────────────────┐
               ▼                          ▼                          ▼
       ┌───────────────┐         ┌───────────────┐          ┌───────────────┐
-      │ GitHub Copilot│         │  Anthropic    │          │  Google / dll │
-      │  (gh/...)     │         │  (kr/...)     │          │  (gm/...)     │
+      │  upstream #1  │         │  upstream #2  │          │  upstream #3  │
+      │  (ag/...)     │         │  (tbr/...)    │          │  (bzr/...)    │
       └───────────────┘         └───────────────┘          └───────────────┘
 ```
 
@@ -121,7 +121,7 @@ Aturan: **data hanya mengalir "ke atas" (trust naik), request hanya mengalir "ke
 ```
 [1] User → POST https://api.mpruy.ai/v1/chat/completions
         Authorization: Bearer sk-mpruy-xxx
-        Body: { model: "gpt-4o", messages: [...], stream: true }
+        Body: { model: "mimo", messages: [...], stream: true }
 
 [2] Cloudflare: TLS, WAF rule, rate limit kasar per IP (opsional)
 
@@ -133,12 +133,12 @@ Aturan: **data hanya mengalir "ke atas" (trust naik), request hanya mengalir "ke
         c. Ceck scope model: apakah key boleh akses model ini? (lihat [08-MODEL-MAPPING.md])
         d. Rate limit: per key (Redis sliding window) → 429 kalau lewat
         e. Cek saldo & quota plan (Redis cache → fallback DB) → 402 kalau saldo habis
-        f. Resolve model: public "gpt-4o" → internal "gh/gpt-4o" dari tabel Model
+        f. Resolve model: public "mimo" → internal "mimo-free" dari tabel Model
 
 [4] Bangun request ke 9Router
         POST {NINE_ROUTER_URL}/v1/chat/completions
         Authorization: Bearer <GATEWAY_KEY>
-        Body: { model: "gh/gpt-4o", messages, stream: <eksplisit true/false>, ... }
+        Body: { model: "mimo-free", messages, stream: <eksplisit true/false>, ... }
 
 [5] 9Router → routing → upstream provider → balas (stream SSE atau JSON)
 

@@ -17,13 +17,13 @@ SSE spec, quirk 9Router, strategi handling, TransformStream, akumulasi usage, de
 Non-stream response dipecah jadi banyak chunk:
 
 ```
-data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1723802400,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1723802400,"model":"mimo","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
 
-data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1723802400,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"Halo"},"finish_reason":null}]}
+data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1723802400,"model":"mimo","choices":[{"index":0,"delta":{"content":"Halo"},"finish_reason":null}]}
 
-data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1723802400,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":" dunia"},"finish_reason":null}]}
+data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1723802400,"model":"mimo","choices":[{"index":0,"delta":{"content":" dunia"},"finish_reason":null}]}
 
-data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1723802400,"model":"gpt-4o","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1723802400,"model":"mimo","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
 
 data: [DONE]
 ```
@@ -51,7 +51,7 @@ X-Accel-Buffering: no
 |---|---|---|
 | `stream` default `true` (beda OpenAI) | request non-stream jadi stream | **selalu** kirim `stream` eksplisit (`true`/`false`) |
 | `[DONE]` sentinel kadang hilang | client gantung / error | deteksi akhir → inject `data: [DONE]\n\n` |
-| `model` di chunk masih internal (`gh/gpt-4o`) | bocor provider | rewrite tiap chunk ke publicName |
+| `model` di chunk masih internal (`mimo-free`) | bocor provider | rewrite tiap chunk ke publicName |
 | `usage` mungkin hanya di chunk terakhir, kadang absen | billing tak akurat | akumulasi + fallback estimasi token |
 | Chunk bisa berisi `finish_reason` tanpa `usage` | settle tanpa usage | estimasi bila usage absen |
 | Provider upstream beda format delta | parse gagal | normalisasi ke shape OpenAI |
@@ -361,7 +361,7 @@ Bila error terjadi **sebelum** byte pertama (upstream langsung 4xx/5xx), boleh k
 const res = await fetch('https://api.mpruy.ai/v1/chat/completions', {
   method: 'POST',
   headers: { Authorization: `Bearer ${KEY}`, 'Content-Type': 'application/json' },
-  body: JSON.stringify({ model: 'gpt-4o', messages: [{ role: 'user', content: 'Halo' }], stream: true }),
+  body: JSON.stringify({ model: 'mimo', messages: [{ role: 'user', content: 'Halo' }], stream: true }),
 });
 
 const reader = res.body!.getReader();
@@ -394,7 +394,7 @@ import OpenAI from 'openai';
 const client = new OpenAI({ apiKey: process.env.MPRUY_KEY, baseURL: 'https://api.mpruy.ai/v1' });
 
 const stream = await client.chat.completions.create({
-  model: 'gpt-4o',
+  model: 'mimo',
   messages: [{ role: 'user', content: 'Halo' }],
   stream: true,
 });
@@ -411,7 +411,7 @@ for await (const chunk of stream) {
 |---|---|
 | Format SSE valid | Unit: jalankan chunk lewat normalizer, assert output `data: ...\n\n` |
 | Inject `[DONE]` | Feed stream tanpa `[DONE]`, assert output berakhir `data: [DONE]\n\n` |
-| Rewrite model | Feed chunk `model:"gh/gpt-4o"`, assert output `gpt-4o` |
+| Rewrite model | Feed chunk `model:"mimo-free"`, assert output `mimo` |
 | Akumulasi usage | Feed chunk usage → assert settle dipanggil dengan angka benar |
 | Fallback estimate | Feed chunk tanpa usage → assert estimate dipakai |
 | Mid-stream error | Feed error chunk → assert error chunk + `[DONE]` |
@@ -425,14 +425,14 @@ import { createNormalizer } from '@/lib/stream';
 
 it('injects [DONE] and rewrites model', async () => {
   let settled: any;
-  const ts = createNormalizer('gpt-4o', 'gh/gpt-4o', 'hi', async (s) => { settled = s; });
+  const ts = createNormalizer('mimo', 'mimo-free', 'hi', async (s) => { settled = s; });
   const enc = new TextEncoder(), dec = new TextDecoder();
   const w = ts.writable.getWriter();
   const r = ts.readable.getReader();
 
   const chunks = [
-    'data: {"model":"gh/gpt-4o","choices":[{"delta":{"content":"Ha"},"finish_reason":null}]}\n\n',
-    'data: {"model":"gh/gpt-4o","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}\n\n',
+    'data: {"model":"mimo-free","choices":[{"delta":{"content":"Ha"},"finish_reason":null}]}\n\n',
+    'data: {"model":"mimo-free","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":2,"total_tokens":7}}\n\n',
   ];
   const out: string[] = [];
   const pump = (async () => {
@@ -443,7 +443,7 @@ it('injects [DONE] and rewrites model', async () => {
   await pump;
 
   const text = out.join('');
-  expect(text).toContain('"model":"gpt-4o"');
+  expect(text).toContain('"model":"mimo"');
   expect(text).toContain('data: [DONE]\n\n');
   expect(settled.usage.total_tokens).toBe(7);
 });

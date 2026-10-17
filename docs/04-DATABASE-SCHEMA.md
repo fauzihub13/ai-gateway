@@ -108,9 +108,9 @@ Index: `keyHash` (unique), `userId`, `status`.
 | Kolom | Tipe | Constraint | Catatan |
 |---|---|---|---|
 | id | String | PK | |
-| publicName | String | UNIQUE, not null | mis. `gpt-4o` |
-| internalName | String | not null | mis. `gh/gpt-4o` (RAHASIA) |
-| displayName | String | not null | mis. "GPT-4o" |
+| publicName | String | UNIQUE, not null | mis. `mimo` |
+| internalName | String | not null | mis. `mimo-free` (RAHASIA) |
+| displayName | String | not null | mis. "MiMo" |
 | description | String? | | |
 | contextWindow | Int | not null | token |
 | maxOutputTokens | Int? | | |
@@ -129,7 +129,7 @@ Index: `publicName` (unique), `isActive`.
 | Kolom | Tipe | Constraint | Catatan |
 |---|---|---|---|
 | id | String | PK | |
-| name | String | UNIQUE, not null | `basic` / `pro` / `enterprise` |
+| name | String | UNIQUE, not null | `free` (saat ini hanya satu plan bawaan) |
 | displayName | String | not null | |
 | markup | Float | not null, default 1.5 | faktor harga jual |
 | rpmLimit | Int | not null | request/menit |
@@ -459,6 +459,8 @@ model AppSetting {
 
 ## 5. Seed data awal
 
+Seeder saat ini membuat **satu plan (`free`)** dan **satu model (`mimo`)**, lalu menautkan `free → semua model`. Admin (`admin@mpruy.ai`) juga ditempatkan di plan `free`. Plan default untuk user baru diatur di [`src/lib/plans.ts`](../src/lib/plans.ts) (env `SIGNUP_PLAN`, default `free`).
+
 ```ts
 // prisma/seed.ts
 import { PrismaClient } from '@prisma/client';
@@ -468,27 +470,21 @@ const db = new PrismaClient();
 
 async function main() {
   const plans = [
-    { name: 'basic', displayName: 'Basic', markup: 1.5, rpmLimit: 60, monthlyTokenLimit: 5_000_000, monthlyPriceIdr: 0 },
-    { name: 'pro', displayName: 'Pro', markup: 1.35, rpmLimit: 300, monthlyTokenLimit: 50_000_000, monthlyPriceIdr: 199_000 },
-    { name: 'enterprise', displayName: 'Enterprise', markup: 1.2, rpmLimit: 1200, monthlyTokenLimit: null, monthlyPriceIdr: 999_000 },
+    // Plan gratis adalah tier default untuk user baru (lihat src/lib/plans.ts).
+    { name: 'free', displayName: 'Free', markup: 1, rpmLimit: 100, monthlyTokenLimit: 20_000_000, monthlyPriceIdr: 0 },
   ];
   for (const p of plans) {
     await db.plan.upsert({ where: { name: p.name }, create: p, update: p });
   }
 
   const models = [
-    { publicName: 'gpt-4o', internalName: 'gh/gpt-4o', displayName: 'GPT-4o', contextWindow: 128_000, priceInPer1kIdr: 4, priceOutPer1kIdr: 12, capabilities: { stream: true, vision: true, tools: true, jsonMode: true } },
-    { publicName: 'gpt-4o-mini', internalName: 'gh/gpt-4o-mini', displayName: 'GPT-4o mini', contextWindow: 128_000, priceInPer1kIdr: 1, priceOutPer1kIdr: 3, capabilities: { stream: true, vision: true, tools: true, jsonMode: true } },
-    { publicName: 'claude-sonnet-4.5', internalName: 'kr/claude-sonnet-4.5', displayName: 'Claude Sonnet 4.5', contextWindow: 200_000, priceInPer1kIdr: 5, priceOutPer1kIdr: 18, capabilities: { stream: true, vision: true, tools: true } },
-    { publicName: 'gemini-1.5-pro', internalName: 'gm/gemini-1.5-pro', displayName: 'Gemini 1.5 Pro', contextWindow: 1_000_000, priceInPer1kIdr: 3, priceOutPer1kIdr: 10, capabilities: { stream: true, vision: true, tools: true } },
+    { publicName: 'mimo', internalName: 'mimo-free', displayName: 'MiMo', contextWindow: 1_048_576, maxOutputTokens: 131_072, priceInPer1kIdr: 4, priceOutPer1kIdr: 12, capabilities: { stream: true, vision: true, tools: true, jsonMode: true } },
   ];
   for (const m of models) {
     await db.model.upsert({ where: { publicName: m.publicName }, create: m, update: m });
   }
 
-  const basic = await db.plan.findUniqueOrThrow({ where: { name: 'basic' } });
-  const pro = await db.plan.findUniqueOrThrow({ where: { name: 'pro' } });
-  const ent = await db.plan.findUniqueOrThrow({ where: { name: 'enterprise' } });
+  const free = await db.plan.findUniqueOrThrow({ where: { name: 'free' } });
   const allModels = await db.model.findMany();
 
   const link = async (planId: string, subset?: string[]) => {
@@ -501,9 +497,8 @@ async function main() {
       });
     }
   };
-  await link(basic.id, ['gpt-4o-mini']);
-  await link(pro.id, ['gpt-4o', 'gpt-4o-mini', 'claude-sonnet-4.5']);
-  await link(ent.id); // semua
+  // Hanya ada satu plan: free, dengan akses ke seluruh model yang di-seed.
+  await link(free.id);
 
   await db.user.upsert({
     where: { email: 'admin@mpruy.ai' },
@@ -512,7 +507,7 @@ async function main() {
       passwordHash: await hash('ChangeMe!123'),
       role: 'ADMIN',
       status: 'ACTIVE',
-      planId: ent.id,
+      planId: free.id,
       balance: 0,
       emailVerifiedAt: new Date(),
     },

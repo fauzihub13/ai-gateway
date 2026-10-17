@@ -119,7 +119,7 @@ Konsisten dengan spec umum (mirip OpenAI/Anthropic). Lihat [05-API-CONTRACT.md](
 ```json
 {
   "error": {
-    "message": "Rate limit reached for gpt-4o on requests per min. Limit: 300. Please retry after 12s.",
+    "message": "Rate limit reached for mimo on requests per min. Limit: 100. Please retry after 12s.",
     "type": "rate_limit_error",
     "code": "rate_limit_exceeded",
     "param": null
@@ -134,7 +134,7 @@ Bila quota bulanan (bukan rate) → `type: "insufficient_quota"`, `code: "quota_
 ## 6. Grace period & burst allowance
 
 - Window pendek (1 menit) memberi respons natural untuk burst singkat.
-- Untuk model mahal / endpoint berat, bisa limit lebih ketat per model (mis. `gpt-4o` 60/mnt, `gpt-4o-mini` 300/mnt) via limiter per model:
+- Untuk model mahal / endpoint berat, bisa limit lebih ketat per model (mis. `mimo` 30/mnt) via limiter per model:
 
 ```ts
 async function modelLimit(modelPublic: string, keyId: string, rpm: number) {
@@ -213,9 +213,9 @@ Namun: endpoint auth sensitif (login) boleh **fail-closed** (menolak sementara) 
 
 | Plan | RPM | burst |
 |---|---|---|
-| basic | 60 | window 60s |
-| pro | 300 | window 60s |
-| enterprise | 1200 | window 60s |
+| free | 100 | window 60s |
+
+Saat ini hanya ada satu plan (`free`) sehingga tabel di atas hanya berisi satu baris. Tambahkan baris baru bila menambah plan di admin.
 
 Override per key via `ApiKey.rpmLimit`.
 
