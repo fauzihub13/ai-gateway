@@ -34,6 +34,18 @@ export async function POST(req: Request) {
     assertCapabilities(ctx.model, body);
     const limited = enforceModelLimits(ctx.model, body);
 
+    // Gerbang limit per-key dicek SEKARANG (sebelum upstream), bukan tengah stream.
+    // Estimasi pakai max_tokens yang sudah di-clamp; settle tetap rekam biaya aktual.
+    await assertKeyMonthlyLimit(
+      ctx,
+      computeCost({
+        model: ctx.model,
+        plan: ctx.plan,
+        promptTokens: estimatePromptTokens(limited.messages),
+        completionTokens: limited.max_tokens ?? 0,
+      }),
+    );
+
     const wantsStream = body.stream === true;
     const promptText = promptToText(body.messages);
 
@@ -92,6 +104,9 @@ export async function POST(req: Request) {
       return json(data, 200, { ...ctx.rateHeaders, 'x-request-id': requestId });
     }
 
+    // Kontrak: sekali stream mulai, TIDAK dipotong karena limit/billing. Semua gerbang
+    // (auth, rate, saldo, quota, key limit, context) sudah lewat di atas. onSettle hanya
+    // mencatat biaya aktual (best-effort) — tidak membatalkan stream.
     const finalCtx = ctx;
     const normalizer = createNormalizer(
       finalCtx.model.publicName,

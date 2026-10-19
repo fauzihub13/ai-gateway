@@ -52,7 +52,6 @@ export interface SettleInput {
 
 export interface SettleResult {
   duplicated: boolean;
-  insufficient?: boolean;
   usageId?: string;
 }
 
@@ -82,18 +81,14 @@ export async function settleUsage(input: SettleInput): Promise<SettleResult> {
     });
 
     if (input.costIdr > 0) {
-      const updated = await tx.$executeRaw`
+      // Kebijakan: stream/permintaan yang sudah dikerjakan TIDAK dipotong di tengah karena limit.
+      // Saldo boleh minus (overdraft) agar task in-flight selesai; request berikutnya diblokir
+      // oleh preflight.assertBalance (balance <= 0 → 402). Bukan kehilangan pendapatan.
+      await tx.$executeRaw`
         UPDATE "User"
         SET balance = balance - ${input.costIdr}, "updatedAt" = now()
-        WHERE id = ${input.userId} AND balance >= ${input.costIdr}
+        WHERE id = ${input.userId}
       `;
-      if (updated === 0) {
-        await tx.usageLog.update({
-          where: { id: usage.id },
-          data: { costIdr: 0, status: 'ERROR', errorCode: 'insufficient_balance_at_settle' },
-        });
-        return { duplicated: false, insufficient: true, usageId: usage.id } as SettleResult;
-      }
 
       const u = await tx.user.findUniqueOrThrow({
         where: { id: input.userId },

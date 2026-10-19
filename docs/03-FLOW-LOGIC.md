@@ -326,8 +326,8 @@ Strategi berlapis:
 
 1. **Redis balance guard (optimistik cepat):**
    `DECRBY` counter saldo yang dicache; bila hasil < 0 → tolak sebelum ke upstream. Nilai disinkronkan berkala dari DB.
-2. **DB atomic decrement + cek (otoritatif):**
-   Transaksi `SELECT ... FOR UPDATE` (row lock per user) atau `UPDATE ... SET balance = balance - cost WHERE id = ? AND balance >= cost`, cek `rowcount`. Bila 0 → tolak.
+2. **DB atomic decrement (otoritatif, boleh minus):**
+   `UPDATE "User" SET balance = balance - cost WHERE id = ?`. Tidak pakai guard `balance >= cost` — request yang sudah dikerjakan tidak dibatalkan di tengah. Overshoot dibatasi oleh gerbang preflight (`balance <= 0 → 402`), request berikutnya diblokir.
 3. **Redis mutex per-user (opsional):** serialisasi settle untuk user yang sama, mencegah kontensi lock DB tinggi.
 
 ```

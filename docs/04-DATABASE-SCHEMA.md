@@ -589,16 +589,17 @@ GROUP BY m."publicName"
 ORDER BY requests DESC;
 ```
 
-### 7.4 Cek saldo aman (atomic decrement)
+### 7.4 Settle saldo (atomic decrement, boleh minus)
 
 ```ts
 const updated = await db.$executeRaw`
   UPDATE "User"
   SET balance = balance - ${cost}, "updatedAt" = now()
-  WHERE id = ${userId} AND balance >= ${cost}
+  WHERE id = ${userId}
 `;
-if (updated === 0) throw new InsufficientBalance();
 ```
+
+Tanpa `AND balance >= cost`: request yang sudah dikerjakan tidak dibatalkan di tengah (kebijakan overdraft). Gerbang saldo ada di preflight (`balance <= 0 → 402`). Lihat [10-BILLING-USAGE.md §4](./10-BILLING-USAGE.md).
 
 ### 7.5 Idempotent usage insert
 

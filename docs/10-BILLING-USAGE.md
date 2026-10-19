@@ -64,7 +64,7 @@ raw = (4.8 + 9.6) * 1 = 9.6 → ceil = Rp10
 
 ## 4. Atomic settle (potong saldo + catat usage)
 
-Satu transaksi DB. Cegah saldo negatif via `WHERE balance >= cost`.
+Satu transaksi DB. Saldo **boleh minus** (overdraft) — kebijakan: request yang sudah dikerjakan / stream yang sudah jalan tidak dipotong di tengah. Gerbang saldo ada di preflight (`balance <= 0 → 402`, lihat §5), jadi overshoot dibatasi satu request dan request berikutnya diblokir.
 
 ```ts
 // src/lib/billing.ts
@@ -97,21 +97,13 @@ export async function settleUsage(input: {
       },
     });
 
-    // 2. potong saldo atomic (hanya bila cost > 0)
+    // 2. potong saldo atomic (hanya bila cost > 0). Saldo boleh minus — task in-flight selesai.
     if (input.costIdr > 0) {
-      const updated = await tx.$executeRaw`
+      await tx.$executeRaw`
         UPDATE "User"
         SET balance = balance - ${input.costIdr}, "updatedAt" = now()
-        WHERE id = ${input.userId} AND balance >= ${input.costIdr}
+        WHERE id = ${input.userId}
       `;
-      if (updated === 0) {
-        // saldo tak cukup saat settle → catat sebagai ERROR, jangan potong
-        await tx.usageLog.update({
-          where: { id: usage.id },
-          data: { costIdr: 0, status: 'ERROR', errorCode: 'insufficient_balance_at_settle' },
-        });
-        return { duplicated: false, insufficient: true, usage };
-      }
 
       // 3. ledger
       const u = await tx.user.findUniqueOrThrow({ where: { id: input.userId }, select: { balance: true } });
@@ -136,17 +128,18 @@ export async function settleUsage(input: {
 
 ---
 
-## 5. Mencegah saldo negatif (concurrency)
+## 5. Saldo & concurrency (kebijakan: selesaikan task, jangan potong tengah)
 
 ```
 Request masuk (sama user, paralel):
-  1. FAST GUARD (Redis): cek saldo cache & decrement budget (lihat [12]).
-        SET balance:{userId} ... ; DECRBY guard:{userId} budget
-        bila guard < 0 → 402 SEBELUM ke upstream
-  2. AUTHORITATIVE (DB): settle atomik (§4) dengan WHERE balance >= cost
-        yang benar-benar terpotong; sisanya gagal → tetap tidak negatif
+  1. FAST GUARD (Redis, opsional): cek saldo cache; bila balance <= 0 → 402 SEBELUM ke upstream
+  2. AUTHORITATIVE (DB): settle atomik (§4). Saldo boleh minus (overdraft) —
+     request yang sudah dikerjakan tidak dibatalkan di tengah
   3. RECONCILE: setelah settle, set ulang cache Redis = balance DB
+  4. Blokir berikutnya: preflight `balance <= 0` menolak request BARU (bukan memotong yang jalan)
 ```
+
+Prinsip: **gerbang di awal, bukan di tengah.** Semua limit (auth, rate, saldo, quota bulanan, limit per-key, context window) dicek di preflight sebelum upstream. Sekali request/stream jalan, ia selesai; biaya direkam di settle (best-effort). Request berikutnya yang diblokir.
 
 Pre-flight check sebelum ke upstream (optimistik, mencegah kirim request yang pasti gagal):
 
