@@ -16,7 +16,7 @@ export const maxDuration = 120;
 const Schema = z.object({
   model: z.string().min(1).max(64),
   messages: z
-    .array(z.object({ role: z.enum(['system', 'user', 'assistant', 'tool']), content: z.union([z.string(), z.array(z.any())]) }))
+    .array(z.object({ role: z.enum(['system', 'user', 'assistant', 'tool']), content: z.union([z.string(), z.array(z.any()), z.null()]) }))
     .min(1),
   stream: z.boolean().optional().default(false),
   temperature: z.number().min(0).max(2).optional(),

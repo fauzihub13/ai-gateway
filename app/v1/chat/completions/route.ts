@@ -121,8 +121,13 @@ export async function POST(req: Request) {
   } catch (err) {
     if (isRateLimited(err)) return err.res;
     if (err instanceof z.ZodError) {
+      const issue = err.errors[0];
+      const message =
+        issue?.code === 'invalid_union'
+          ? `Invalid \`${issue.path.join('.')}\`: expected string, array of content parts, or null.`
+          : issue?.message ?? 'Invalid body.';
       return toErrorResponse(
-        new BadRequestError('invalid_request_error', err.errors[0]?.message ?? 'Invalid body.', err.errors[0]?.path.join('.') ?? null),
+        new BadRequestError('invalid_request_error', message, issue?.path.join('.') ?? null),
         requestId,
       );
     }

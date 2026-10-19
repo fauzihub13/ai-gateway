@@ -140,7 +140,7 @@ export const ChatBodySchema = z
       .array(
         z.object({
           role: z.enum(['system', 'user', 'assistant', 'tool']),
-          content: z.union([z.string().max(100_000), z.array(z.any()).max(50)]),
+          content: z.union([z.string().max(100_000), z.array(z.any()).max(50), z.null()]),
           name: z.string().max(64).optional(),
           tool_call_id: z.string().max(128).optional(),
         }),
