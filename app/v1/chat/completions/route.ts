@@ -4,6 +4,7 @@ import {
   isRateLimited,
   ChatBodySchema,
   assertCapabilities,
+  enforceModelLimits,
   assertKeyMonthlyLimit,
   type PreflightContext,
 } from '@/lib/proxy';
@@ -31,11 +32,12 @@ export async function POST(req: Request) {
 
     ctx = await preflight(req, { endpoint: 'chat.completions', modelName: body.model, ip });
     assertCapabilities(ctx.model, body);
+    const limited = enforceModelLimits(ctx.model, body);
 
     const wantsStream = body.stream === true;
     const promptText = promptToText(body.messages);
 
-    const upstreamBody = { ...body, model: ctx.model.internalName, stream: wantsStream };
+    const upstreamBody = { ...limited, model: ctx.model.internalName, stream: wantsStream };
     const upstreamStart = Date.now();
 
     const upstream = await nineRouterFetch('/v1/chat/completions', {

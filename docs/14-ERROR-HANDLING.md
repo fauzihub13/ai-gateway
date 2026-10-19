@@ -163,6 +163,7 @@ export async function mapUpstreamError(res: Response, requestId: string): Promis
 | HTTP | Kapan | code contoh |
 |---|---|---|
 | 400 | input invalid | `invalid_request_error` |
+| 400 | prompt > context window model | `context_length_exceeded` |
 | 401 | key/session invalid | `invalid_api_key` |
 | 402 | saldo kurang (model berbayar) | `insufficient_balance` |
 | 403 | akses model ditolak | `model_not_allowed`, `model_not_in_key_scope` |

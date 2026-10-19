@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { db } from './db';
 import { extractBearer, hashApiKey, looksLikeApiKey } from './apikey';
 import { resolveModel, type ModelCapabilities } from './model-mapping';
+import { estimatePromptTokens } from './tokens';
 import { getBalance, isFreeModel } from './billing';
 import { enforceRateLimitsSafe, type RateHeaders } from './ratelimit';
 import { UnauthorizedError, InsufficientBalanceError, TooManyRequestsError, BadRequestError } from './errors';
@@ -145,14 +146,13 @@ export const ChatBodySchema = z
           tool_call_id: z.string().max(128).optional(),
         }),
       )
-      .min(1)
-      // Agent clients (opencode dll) resend full history tiap request; 200 terlalu kecil.
-      // ponytail: hard cap tetap ada buat DoS; upgrade ke trim-history kalau masih kelewat.
-      .max(2000),
+      .min(1),
+    // ponytail: no global message-count cap — batas asli = model.contextWindow (lihat enforceModelLimits).
+    // Hanya sanity guard panjang string di bawah (cegah payload OOM).
     stream: z.boolean().optional().default(false),
     temperature: z.number().min(0).max(2).optional(),
     top_p: z.number().min(0).max(1).optional(),
-    max_tokens: z.number().int().min(1).max(32_000).optional(),
+    max_tokens: z.number().int().min(1).optional(),
     stop: z.union([z.string().max(64), z.array(z.string().max(64)).max(4)]).optional(),
     tools: z.array(z.any()).max(64).optional(),
     tool_choice: z.union([z.string(), z.object({}).passthrough()]).optional(),
@@ -160,6 +160,32 @@ export const ChatBodySchema = z
     user: z.string().max(128).optional(),
   })
   .passthrough();
+
+/**
+ * Limit diturunkan dari baris Model (contextWindow/maxOutputTokens), bukan hardcode global.
+ * - max_tokens di-clamp ke model.maxOutputTokens (UX: jangan tolak, cukup turunkan).
+ * - prompt estimate > contextWindow - max_tokens → error context_length_exceeded yang jelas.
+ * Return body dengan max_tokens sudah di-clamp.
+ */
+export function enforceModelLimits<T extends { messages: Array<{ role: string; content: unknown }>; max_tokens?: number }>(
+  model: { contextWindow: number; maxOutputTokens: number | null },
+  body: T,
+): T {
+  const promptTokens = estimatePromptTokens(body.messages);
+  const cap = model.maxOutputTokens ?? model.contextWindow;
+  const maxTokens = body.max_tokens && body.max_tokens > cap ? cap : body.max_tokens;
+  const budget = promptTokens + (maxTokens ?? 0);
+  if (budget > model.contextWindow) {
+    throw new BadRequestError(
+      'context_length_exceeded',
+      `This request exceeds the ${model.contextWindow}-token context window for this model ` +
+        `(prompt ~${promptTokens} tokens + max_tokens ${maxTokens ?? 0}). ` +
+        `Reduce the conversation history or lower max_tokens.`,
+      'messages',
+    );
+  }
+  return { ...body, max_tokens: maxTokens };
+}
 
 export function assertCapabilities(
   model: { capabilities: ModelCapabilities },

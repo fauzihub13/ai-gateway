@@ -186,28 +186,31 @@ Content-Security-Policy:
 ## 10. Input validation (Zod)
 
 - Validasi **di batas trust** (setiap endpoint) sebelum menyentuh logic/DB.
-- Batasi ukuran body: `messages` max N item, `content` max panjang, `max_tokens` max, `tools` max.
-- Tolak field tak dikenal (`.strict()`) bila perlu.
+- Zod = sanity guard: panjang string, `.min(1)`, `.strict()` bila perlu. **Bukan** tempat membatasi jumlah pesan/token — batas asli diturunkan dari baris `Model` (`contextWindow`, `maxOutputTokens`) saat runtime, lihat [08-MODEL-MAPPING.md](./08-MODEL-MAPPING.md).
+- Jangan hardcode cap jumlah `messages`: agent client (opencode) resend full history → cap global bikin 400 di session panjang. Batasi pakai **token vs contextWindow**, bukan jumlah item.
 
 ```ts
 const ChatSchema = z.object({
   model: z.string().min(1).max(64),
   messages: z.array(z.object({
     role: z.enum(['system', 'user', 'assistant', 'tool']),
-    content: z.union([z.string().max(100_000), z.array(z.any()).max(50)]),
+    content: z.union([z.string().max(100_000), z.array(z.any()).max(50), z.null()]),
     name: z.string().max(64).optional(),
     tool_call_id: z.string().max(128).optional(),
-  })).min(1).max(200),
+  })).min(1), // no count cap — lihat enforceModelLimits
   stream: z.boolean().optional().default(false),
   temperature: z.number().min(0).max(2).optional(),
   top_p: z.number().min(0).max(1).optional(),
-  max_tokens: z.number().int().min(1).max(32_000).optional(),
+  max_tokens: z.number().int().min(1).optional(), // di-clamp per-model nanti
   stop: z.union([z.string().max(64), z.array(z.string().max(64)).max(4)]).optional(),
   tools: z.array(z.any()).max(64).optional(),
   tool_choice: z.union([z.string(), z.object({}).passthrough()]).optional(),
   response_format: z.object({ type: z.string() }).passthrough().optional(),
   user: z.string().max(128).optional(),
 }).passthrough();
+
+// setelah resolveModel(): clamp max_tokens ke maxOutputTokens + cek prompt vs contextWindow
+const body = enforceModelLimits(model, ChatSchema.parse(raw));
 ```
 
 ---

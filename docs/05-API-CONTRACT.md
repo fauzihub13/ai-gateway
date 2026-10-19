@@ -174,6 +174,7 @@ Berguna untuk SDK/tooling yang memverifikasi key.
 | HTTP | `type` | `code` | Pesan user |
 |---|---|---|---|
 | 400 | `invalid_request_error` | `invalid_request_error` | detail field salah |
+| 400 | `invalid_request_error` | `context_length_exceeded` | "This request exceeds the N-token context window for this model." |
 | 401 | `invalid_request_error` | `invalid_api_key` | "Incorrect API key provided." |
 | 402 | `insufficient_quota` | `insufficient_balance` | "Insufficient balance." (tidak berlaku untuk model gratis) |
 | 403 | `permission_error` | `model_not_allowed` | "You do not have access to model X." |
