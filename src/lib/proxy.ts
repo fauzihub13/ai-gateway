@@ -146,7 +146,9 @@ export const ChatBodySchema = z
         }),
       )
       .min(1)
-      .max(200),
+      // Agent clients (opencode dll) resend full history tiap request; 200 terlalu kecil.
+      // ponytail: hard cap tetap ada buat DoS; upgrade ke trim-history kalau masih kelewat.
+      .max(2000),
     stream: z.boolean().optional().default(false),
     temperature: z.number().min(0).max(2).optional(),
     top_p: z.number().min(0).max(1).optional(),
