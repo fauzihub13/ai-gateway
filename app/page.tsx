@@ -487,6 +487,7 @@ export default async function Home() {
             <Link href="/#anatomy" className="link-rule hover:text-foreground">Blueprint</Link>
             <Link href="/#pricing" className="link-rule hover:text-foreground">Pricing</Link>
             <Link href="/docs" className="link-rule hover:text-foreground">Documentation</Link>
+            <Link href="/disclaimer" className="link-rule hover:text-foreground">Disclaimer</Link>
             <Link href="/login" className="link-rule hover:text-foreground">Sign in</Link>
           </nav>
           <span className="font-mono text-[11px] text-muted-foreground">© {new Date().getFullYear()} Mpruy AI</span>
