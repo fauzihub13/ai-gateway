@@ -28,6 +28,7 @@ interface ModelRow {
   contextWindow: number;
   priceInPer1kIdr: number;
   priceOutPer1kIdr: number;
+  priceCachedInPer1kIdr: number | null;
   capabilities: Record<string, boolean>;
   isActive: boolean;
   plans: Array<{ plan: { name: string } }>;
@@ -40,6 +41,7 @@ const EMPTY = {
   contextWindow: 128000,
   priceInPer1kIdr: 4,
   priceOutPer1kIdr: 12,
+  priceCachedInPer1kIdr: null as number | null,
   capabilities: { stream: true, vision: false, tools: true, jsonMode: true } as Record<string, boolean>,
 };
 
@@ -101,6 +103,7 @@ export default function AdminModelsPage() {
       contextWindow: m.contextWindow,
       priceInPer1kIdr: m.priceInPer1kIdr,
       priceOutPer1kIdr: m.priceOutPer1kIdr,
+      priceCachedInPer1kIdr: m.priceCachedInPer1kIdr,
       capabilities: m.capabilities,
     });
   }
@@ -199,6 +202,17 @@ export default function AdminModelsPage() {
                 onChange={(e) => setForm({ ...form, priceOutPer1kIdr: Number(e.target.value) })}
               />
             </div>
+            <div className="space-y-2">
+              <Label>Harga in cache / 1k (IDR)</Label>
+              <Input
+                type="number"
+                placeholder="kosong = tanpa diskon"
+                value={form.priceCachedInPer1kIdr ?? ''}
+                onChange={(e) =>
+                  setForm({ ...form, priceCachedInPer1kIdr: e.target.value === '' ? null : Number(e.target.value) })
+                }
+              />
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-6">
@@ -242,7 +256,7 @@ export default function AdminModelsPage() {
             <TableRow>
               <TableHead>Public</TableHead>
               <TableHead>Internal</TableHead>
-              <TableHead className="text-right">In / Out</TableHead>
+              <TableHead className="text-right">In / Out / Cache</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Aksi</TableHead>
             </TableRow>
@@ -255,7 +269,8 @@ export default function AdminModelsPage() {
                   <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{m.internalName}</code>
                 </TableCell>
                 <TableCell className="text-right">
-                  {formatIdr(m.priceInPer1kIdr)} / {formatIdr(m.priceOutPer1kIdr)}
+                  {formatIdr(m.priceInPer1kIdr)} / {formatIdr(m.priceOutPer1kIdr)} /{' '}
+                  {m.priceCachedInPer1kIdr == null ? '—' : formatIdr(m.priceCachedInPer1kIdr)}
                 </TableCell>
                 <TableCell>
                   <Badge variant={m.isActive ? 'success' : 'secondary'}>{m.isActive ? 'ACTIVE' : 'OFF'}</Badge>

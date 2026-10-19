@@ -30,6 +30,7 @@ const CreateSchema = z.object({
   maxOutputTokens: z.number().int().min(1).optional(),
   priceInPer1kIdr: z.number().int().min(0),
   priceOutPer1kIdr: z.number().int().min(0),
+  priceCachedInPer1kIdr: z.number().int().min(0).nullable().optional(),
   capabilities: z.record(z.boolean()).default({}),
   plans: z.array(z.string()).default([]),
 });
@@ -54,6 +55,7 @@ export async function POST(req: Request) {
         maxOutputTokens: body.maxOutputTokens,
         priceInPer1kIdr: body.priceInPer1kIdr,
         priceOutPer1kIdr: body.priceOutPer1kIdr,
+        priceCachedInPer1kIdr: body.priceCachedInPer1kIdr ?? null,
         capabilities: body.capabilities,
       },
     });
@@ -106,6 +108,10 @@ export async function PATCH(req: Request) {
         internalName: body.internalName as string | undefined,
         priceInPer1kIdr: body.priceInPer1kIdr as number | undefined,
         priceOutPer1kIdr: body.priceOutPer1kIdr as number | undefined,
+        priceCachedInPer1kIdr:
+          body.priceCachedInPer1kIdr === undefined
+            ? undefined
+            : (body.priceCachedInPer1kIdr as number | null),
         capabilities: body.capabilities as object | undefined,
         isActive: body.isActive as boolean | undefined,
         deprecatedAt: body.isActive === false ? new Date() : undefined,

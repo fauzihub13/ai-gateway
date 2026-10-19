@@ -8,7 +8,7 @@ import {
   type PreflightContext,
 } from '@/lib/proxy';
 import { nineRouterFetch } from '@/lib/ninerouter';
-import { createNormalizer } from '@/lib/stream';
+import { createNormalizer, extractCachedTokens } from '@/lib/stream';
 import { settleUsage, computeCost } from '@/lib/billing';
 import { estimatePromptTokens, estimateTokens, promptToText } from '@/lib/tokens';
 import { toErrorResponse, BadRequestError, InternalError } from '@/lib/errors';
@@ -68,16 +68,22 @@ export async function POST(req: Request) {
         usage?.completion_tokens ??
         estimateTokens(String((data.choices as Array<{ message?: { content?: string } }>)?.[0]?.message?.content ?? ''));
       const totalTokens = usage?.total_tokens ?? promptTokens + completionTokens;
-      data.usage = { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: totalTokens };
+      const cachedPromptTokens = extractCachedTokens(data.usage as Record<string, unknown> | undefined);
+      data.usage = {
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+        total_tokens: totalTokens,
+        prompt_tokens_details: { cached_tokens: cachedPromptTokens },
+      };
 
       const cost = computeCost({
         model: ctx.model, plan: ctx.plan,
-        promptTokens, completionTokens,
+        promptTokens, completionTokens, cachedPromptTokens,
       });
       await assertKeyMonthlyLimit(ctx, cost);
       await recordUsage(ctx, {
         requestId, endpoint: 'chat.completions', streamed: false,
-        promptTokens, completionTokens, costIdr: cost, status: 'COMPLETED',
+        promptTokens, completionTokens, cachedPromptTokens, costIdr: cost, status: 'COMPLETED',
         latencyMs: Date.now() - start, upstreamLatencyMs: Date.now() - upstreamStart,
       });
 
@@ -96,10 +102,12 @@ export async function POST(req: Request) {
         const cost = computeCost({
           model: finalCtx.model, plan: finalCtx.plan,
           promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens,
+          cachedPromptTokens: usage.cachedPromptTokens,
         });
         await recordUsage(finalCtx, {
           requestId, endpoint: 'chat.completions', streamed: true,
           promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens,
+          cachedPromptTokens: usage.cachedPromptTokens ?? 0,
           costIdr: cost, status, latencyMs: Date.now() - start,
           upstreamLatencyMs: Date.now() - upstreamStart,
         });
@@ -141,6 +149,7 @@ interface UsageRecord {
   streamed: boolean;
   promptTokens: number;
   completionTokens: number;
+  cachedPromptTokens?: number;
   costIdr: number;
   status: 'COMPLETED' | 'PARTIAL' | 'ERROR' | 'REJECTED';
   latencyMs: number;
@@ -158,6 +167,7 @@ async function recordUsage(ctx: PreflightContext, u: UsageRecord): Promise<void>
       endpoint: u.endpoint,
       promptTokens: u.promptTokens,
       completionTokens: u.completionTokens,
+      cachedPromptTokens: u.cachedPromptTokens ?? 0,
       costIdr: u.costIdr,
       status: u.status,
       streamed: u.streamed,

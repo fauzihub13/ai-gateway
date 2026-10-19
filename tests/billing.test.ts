@@ -18,6 +18,26 @@ describe('computeCost', () => {
   it('nol token -> nol biaya', () => {
     expect(computeCost({ model, plan, promptTokens: 0, completionTokens: 0 })).toBe(0);
   });
+
+  it('cached token tanpa harga khusus -> sama seperti harga input biasa', () => {
+    const withCached = computeCost({ model, plan, promptTokens: 1200, completionTokens: 800, cachedPromptTokens: 500 });
+    const withoutCached = computeCost({ model, plan, promptTokens: 1200, completionTokens: 800 });
+    expect(withCached).toBe(withoutCached);
+  });
+
+  it('cached token dengan harga diskon -> lebih murah dari tanpa diskon', () => {
+    const discounted = computeCost({
+      model: { ...model, priceCachedInPer1kIdr: 1 }, plan, promptTokens: 1000, completionTokens: 0, cachedPromptTokens: 1000,
+    });
+    const full = computeCost({ model, plan, promptTokens: 1000, completionTokens: 0, cachedPromptTokens: 1000 });
+    expect(discounted).toBeLessThan(full);
+    expect(discounted).toBe(Math.ceil((1000 / 1000) * 1 * 1.35));
+  });
+
+  it('cached token di-clamp ke promptTokens', () => {
+    const c = computeCost({ model: { ...model, priceCachedInPer1kIdr: 2 }, plan, promptTokens: 500, completionTokens: 0, cachedPromptTokens: 9999 });
+    expect(c).toBe(Math.ceil((500 / 1000) * 2 * 1.35));
+  });
 });
 
 describe('isFreeModel', () => {

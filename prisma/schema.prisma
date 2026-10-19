@@ -120,6 +120,9 @@ model Model {
   maxOutputTokens  Int?
   priceInPer1kIdr  Int
   priceOutPer1kIdr Int
+  // Harga input untuk token yang kena cache upstream. null = tidak ada diskon
+  // (token cached tetap dihargai priceInPer1kIdr), agar model lama tidak berubah perilakunya.
+  priceCachedInPer1kIdr Int?
   capabilities     Json      @default("{}")
   isActive         Boolean   @default(true)
   deprecatedAt     DateTime? @db.Timestamptz
@@ -168,6 +171,8 @@ model UsageLog {
   endpoint          String
   promptTokens      Int         @default(0)
   completionTokens  Int         @default(0)
+  // Bagian dari promptTokens yang dilaporkan upstream sebagai cache hit.
+  cachedPromptTokens Int        @default(0)
   totalTokens       Int         @default(0)
   costIdr           Int         @default(0)
   status            UsageStatus
@@ -179,6 +184,7 @@ model UsageLog {
 
   @@index([userId, createdAt])
   @@index([modelId, createdAt])
+  @@index([apiKeyId, createdAt])
   @@index([createdAt])
 }
 

@@ -7,6 +7,7 @@ import { settleUsage, computeCost, getBalance, isFreeModel } from '@/lib/billing
 import { estimatePromptTokens, estimateTokens } from '@/lib/tokens';
 import { toErrorResponse, BadRequestError, InsufficientBalanceError, ForbiddenError, NotFoundError } from '@/lib/errors';
 import { mapUpstreamError } from '@/lib/upstream';
+import { extractCachedTokens } from '@/lib/stream';
 import { getRequestId, json } from '@/lib/http';
 
 export const runtime = 'nodejs';
@@ -71,13 +72,19 @@ export async function POST(req: Request) {
       usage?.completion_tokens ??
       estimateTokens(String((data.choices as Array<{ message?: { content?: string } }>)?.[0]?.message?.content ?? ''));
     const totalTokens = usage?.total_tokens ?? promptTokens + completionTokens;
-    data.usage = { prompt_tokens: promptTokens, completion_tokens: completionTokens, total_tokens: totalTokens };
+    const cachedPromptTokens = extractCachedTokens(data.usage as Record<string, unknown> | undefined);
+    data.usage = {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: totalTokens,
+      prompt_tokens_details: { cached_tokens: cachedPromptTokens },
+    };
 
-    const cost = computeCost({ model, plan: user.plan, promptTokens, completionTokens });
+    const cost = computeCost({ model, plan: user.plan, promptTokens, completionTokens, cachedPromptTokens });
 
     await settleUsage({
       requestId, userId: user.id, modelId: model.id, endpoint: 'playground',
-      promptTokens, completionTokens, costIdr: cost, status: 'COMPLETED',
+      promptTokens, completionTokens, cachedPromptTokens, costIdr: cost, status: 'COMPLETED',
       streamed: false, latencyMs: Date.now() - start,
     });
 

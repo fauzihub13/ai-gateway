@@ -2,13 +2,21 @@ import { db } from './db';
 import type { UsageStatus } from '@prisma/client';
 
 export function computeCost(opts: {
-  model: { priceInPer1kIdr: number; priceOutPer1kIdr: number };
+  model: { priceInPer1kIdr: number; priceOutPer1kIdr: number; priceCachedInPer1kIdr?: number | null };
   plan: { markup: number };
   promptTokens: number;
   completionTokens: number;
+  cachedPromptTokens?: number;
 }): number {
   const { model, plan, promptTokens, completionTokens } = opts;
-  const inCost = (promptTokens / 1000) * model.priceInPer1kIdr;
+
+  // Token cached dihargai priceCachedInPer1kIdr bila di-set, kalau tidak (null/undefined)
+  // fallback ke harga input normal — jadi model lama tidak berubah biayanya.
+  const cached = Math.min(Math.max(opts.cachedPromptTokens ?? 0, 0), Math.max(promptTokens, 0));
+  const nonCached = Math.max(promptTokens - cached, 0);
+  const cachedInPrice = model.priceCachedInPer1kIdr ?? model.priceInPer1kIdr;
+
+  const inCost = (nonCached / 1000) * model.priceInPer1kIdr + (cached / 1000) * cachedInPrice;
   const outCost = (completionTokens / 1000) * model.priceOutPer1kIdr;
   const raw = (inCost + outCost) * plan.markup;
   return Math.ceil(raw);
@@ -33,6 +41,7 @@ export interface SettleInput {
   endpoint: string;
   promptTokens: number;
   completionTokens: number;
+  cachedPromptTokens?: number;
   costIdr: number;
   status: UsageStatus;
   streamed?: boolean;
@@ -61,6 +70,7 @@ export async function settleUsage(input: SettleInput): Promise<SettleResult> {
         endpoint: input.endpoint,
         promptTokens: input.promptTokens,
         completionTokens: input.completionTokens,
+        cachedPromptTokens: input.cachedPromptTokens ?? 0,
         totalTokens: input.promptTokens + input.completionTokens,
         costIdr: input.costIdr,
         status: input.status,

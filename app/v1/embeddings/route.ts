@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { preflight, isRateLimited } from '@/lib/proxy';
 import { nineRouterFetch } from '@/lib/ninerouter';
+import { extractCachedTokens } from '@/lib/stream';
 import { settleUsage, computeCost } from '@/lib/billing';
 import { estimateTokens } from '@/lib/tokens';
 import { toErrorResponse, BadRequestError } from '@/lib/errors';
@@ -46,9 +47,10 @@ export async function POST(req: Request) {
     const inputText = Array.isArray(body.input) ? body.input.join(' ') : body.input;
     const promptTokens = usage?.prompt_tokens ?? estimateTokens(inputText);
     const totalTokens = usage?.total_tokens ?? promptTokens;
-    data.usage = { prompt_tokens: promptTokens, total_tokens: totalTokens };
+    const cachedPromptTokens = extractCachedTokens(data.usage as Record<string, unknown> | undefined);
+    data.usage = { prompt_tokens: promptTokens, total_tokens: totalTokens, prompt_tokens_details: { cached_tokens: cachedPromptTokens } };
 
-    const cost = computeCost({ model: ctx.model, plan: ctx.plan, promptTokens, completionTokens: 0 });
+    const cost = computeCost({ model: ctx.model, plan: ctx.plan, promptTokens, completionTokens: 0, cachedPromptTokens });
 
     await settleUsage({
       requestId,
@@ -58,6 +60,7 @@ export async function POST(req: Request) {
       endpoint: 'embeddings',
       promptTokens,
       completionTokens: 0,
+      cachedPromptTokens,
       costIdr: cost,
       status: 'COMPLETED',
       streamed: false,

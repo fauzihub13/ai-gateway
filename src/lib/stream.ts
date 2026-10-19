@@ -3,7 +3,22 @@ import { estimateTokens } from './tokens';
 export interface Usage {
   prompt_tokens: number;
   completion_tokens: number;
+  cachedPromptTokens?: number;
   total_tokens: number;
+}
+
+/**
+ * Ambil jumlah token cache-hit dari payload usage upstream.
+ * 9Router OpenAI-compatible biasanya kirim `prompt_tokens_details.cached_tokens`;
+ * sebagian provider (Anthropic dkk lewat gateway) pakai `cache_read_input_tokens`.
+ */
+export function extractCachedTokens(usage: Record<string, unknown> | undefined): number {
+  if (!usage) return 0;
+  const details = usage.prompt_tokens_details as { cached_tokens?: number } | undefined;
+  if (typeof details?.cached_tokens === 'number') return Math.max(0, details.cached_tokens);
+  if (typeof usage.cached_tokens === 'number') return Math.max(0, usage.cached_tokens);
+  if (typeof usage.cache_read_input_tokens === 'number') return Math.max(0, usage.cache_read_input_tokens);
+  return 0;
 }
 
 export interface StreamState {
@@ -81,6 +96,7 @@ export function createNormalizer(
           state.usage = {
             prompt_tokens: usage.prompt_tokens ?? 0,
             completion_tokens: usage.completion_tokens ?? 0,
+            cachedPromptTokens: extractCachedTokens(parsed.usage as Record<string, unknown> | undefined),
             total_tokens:
               usage.total_tokens ?? (usage.prompt_tokens ?? 0) + (usage.completion_tokens ?? 0),
           };
@@ -106,6 +122,7 @@ export function createNormalizer(
         state.usage = {
           prompt_tokens: prompt,
           completion_tokens: completion,
+          cachedPromptTokens: 0,
           total_tokens: prompt + completion,
         };
       }
