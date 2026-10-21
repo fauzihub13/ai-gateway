@@ -8,8 +8,8 @@ export interface CatalogModel {
   publicName: string;
   displayName: string;
   contextWindow: number;
-  priceInPer1kIdr: number;
-  priceOutPer1kIdr: number;
+  priceInPer1MIdr: number;
+  priceOutPer1MIdr: number;
   capabilities: {
     stream?: boolean;
     vision?: boolean;
@@ -125,8 +125,8 @@ export function ModelCatalog({ models }: { models: CatalogModel[] }) {
                     )}
                   </div>
                 </td>
-                <td className="tabular px-4 py-3 text-right font-mono text-xs">{formatIdr(m.priceInPer1kIdr)}</td>
-                <td className="tabular px-4 py-3 text-right font-mono text-xs">{formatIdr(m.priceOutPer1kIdr)}</td>
+                <td className="tabular px-4 py-3 text-right font-mono text-xs">{formatIdr(m.priceInPer1MIdr)}</td>
+                <td className="tabular px-4 py-3 text-right font-mono text-xs">{formatIdr(m.priceOutPer1MIdr)}</td>
                 <td className="px-3 py-3 text-right">
                   <button
                     type="button"
@@ -183,11 +183,11 @@ export function ModelCatalog({ models }: { models: CatalogModel[] }) {
               </div>
               <div>
                 <dt className="tech-label text-[9px]">In / 1K</dt>
-                <dd className="tabular mt-0.5 font-mono text-foreground">{formatIdr(m.priceInPer1kIdr)}</dd>
+                <dd className="tabular mt-0.5 font-mono text-foreground">{formatIdr(m.priceInPer1MIdr)}</dd>
               </div>
               <div>
                 <dt className="tech-label text-[9px]">Out / 1K</dt>
-                <dd className="tabular mt-0.5 font-mono text-foreground">{formatIdr(m.priceOutPer1kIdr)}</dd>
+                <dd className="tabular mt-0.5 font-mono text-foreground">{formatIdr(m.priceOutPer1MIdr)}</dd>
               </div>
             </dl>
           </li>

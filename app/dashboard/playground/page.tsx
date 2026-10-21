@@ -13,8 +13,8 @@ import { apiFetch } from '@/lib/client';
 interface ModelInfo {
   publicName: string;
   displayName: string;
-  priceInPer1kIdr: number;
-  priceOutPer1kIdr: number;
+  priceInPer1MIdr: number;
+  priceOutPer1MIdr: number;
 }
 
 interface Message {
@@ -98,7 +98,7 @@ export default function PlaygroundPage() {
             </Select>
             {selected && (
               <CardDescription className="hidden sm:block">
-                Rp{selected.priceInPer1kIdr}/Rp{selected.priceOutPer1kIdr} per 1k token
+                Rp{selected.priceInPer1MIdr}/Rp{selected.priceOutPer1MIdr} per 1M token
               </CardDescription>
             )}
           </div>

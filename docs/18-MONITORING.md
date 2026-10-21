@@ -175,7 +175,7 @@ margin = revenue - (cost_upstream)
 bila margin negatif pada model tertentu → alert (mis. markup salah / harga dasar naik)
 ```
 
-Job harian: hitung cost dasar (dari `priceIn/OutPer1kIdr` dibagi markup) × token → bandingkan dengan pendapatan tercatat.
+Job harian: hitung cost dasar (dari `priceIn/OutPer1MIdr` dibagi markup) × token → bandingkan dengan pendapatan tercatat.
 
 ---
 

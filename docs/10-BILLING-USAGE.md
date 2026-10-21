@@ -40,25 +40,39 @@ Status: `REJECTED` = ditolak sebelum ke upstream (auth/limit/saldo) → `costIdr
 
 ```ts
 export function computeCost(opts: {
-  model: { priceInPer1kIdr: number; priceOutPer1kIdr: number };
+  model: { priceInPer1MIdr: number; priceOutPer1MIdr: number; priceCachedInPer1MIdr?: number | null };
   plan: { markup: number };
   promptTokens: number;
   completionTokens: number;
+  cachedPromptTokens?: number;
 }): number {
   const { model, plan, promptTokens, completionTokens } = opts;
-  const inCost = (promptTokens / 1000) * model.priceInPer1kIdr;
-  const outCost = (completionTokens / 1000) * model.priceOutPer1kIdr;
+
+  // Token cache hit dihargai priceCachedInPer1MIdr bila ada; null = tanpa diskon.
+  const cached = Math.min(Math.max(opts.cachedPromptTokens ?? 0, 0), Math.max(promptTokens, 0));
+  const nonCached = Math.max(promptTokens - cached, 0);
+  const cachedInPrice = model.priceCachedInPer1MIdr ?? model.priceInPer1MIdr;
+
+  const inCost = (nonCached / 1_000_000) * model.priceInPer1MIdr
+               + (cached / 1_000_000) * cachedInPrice;
+  const outCost = (completionTokens / 1_000_000) * model.priceOutPer1MIdr;
   const raw = (inCost + outCost) * plan.markup;
   return Math.ceil(raw); // ceil ke rupiah, arah aman (kami)
 }
 ```
 
-Contoh: mimo, plan free (×1), 1.200 prompt + 800 completion:
+Harga disimpan **per 1 juta token** (`priceInPer1MIdr`, `priceOutPer1MIdr`, `priceCachedInPer1MIdr`),
+sama dengan satuan yang dipakai provider upstream.
+
+Contoh: mimo (Rp4.000/1M in, Rp12.000/1M out), plan free (×1), 1.200 prompt + 800 completion:
 ```
-inCost  = 1.2 * 4 = 4.8
-outCost = 0.8 * 12 = 9.6
-raw = (4.8 + 9.6) * 1 = 9.6 → ceil = Rp10
+inCost  = 1200 / 1_000_000 * 4000  = 4.8
+outCost = 800  / 1_000_000 * 12000 = 9.6
+raw = (4.8 + 9.6) * 1 = 14.4 → ceil = Rp15
 ```
+
+> Perhatikan: `Math.ceil` per request membuat request kecil (mis. 100 token) tetap kena Rp1.
+> Itu disengaja — biaya minimum satu request adalah Rp1.
 
 ---
 
@@ -146,7 +160,7 @@ Pre-flight check sebelum ke upstream (optimistik, mencegah kirim request yang pa
 ```ts
 async function assertBalance(
   userId: string,
-  model: { priceInPer1kIdr: number; priceOutPer1kIdr: number },
+  model: { priceInPer1MIdr: number; priceOutPer1MIdr: number },
   plan: { markup: number },
 ) {
   // Model gratis (harga efektif 0) boleh dipakai walau saldo 0 — biayanya 0.
@@ -157,7 +171,7 @@ async function assertBalance(
 }
 ```
 
-`isFreeModel` (lihat implementasi di `src/lib/billing.ts`): `priceInPer1kIdr * plan.markup <= 0 && priceOutPer1kIdr * plan.markup <= 0`.
+`isFreeModel` (lihat implementasi di `src/lib/billing.ts`): `priceInPer1MIdr * plan.markup <= 0 && priceOutPer1MIdr * plan.markup <= 0`.
 
 Catatan: karena biaya final tak diketahui sebelum respons, pre-flight hanya mencegah saldo 0 pada model berbayar. Penagihan sebenarnya di settle. Bila saldo tidak cukup saat settle → tagih 0 dan catat `ERROR` (bukan saldo negatif). Untuk model gratis, `costIdr = 0` sehingga settle tidak memotong saldo dan tidak menulis `BalanceLedger`.
 

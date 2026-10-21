@@ -57,7 +57,7 @@ export interface PreflightContext extends AuthContext {
  */
 export async function assertBalance(
   userId: string,
-  opts?: { model?: { priceInPer1kIdr: number; priceOutPer1kIdr: number }; plan?: { markup: number } },
+  opts?: { model?: { priceInPer1MIdr: number; priceOutPer1MIdr: number }; plan?: { markup: number } },
 ): Promise<void> {
   const free = opts?.model && opts?.plan ? isFreeModel(opts.model, opts.plan) : false;
   if (free) return;

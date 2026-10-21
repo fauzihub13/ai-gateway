@@ -47,18 +47,18 @@ import { describe, it, expect } from 'vitest';
 import { computeCost } from '@/lib/billing';
 
 describe('computeCost', () => {
-  const model = { priceInPer1kIdr: 4, priceOutPer1kIdr: 12 };
+  const model = { priceInPer1MIdr: 4000, priceOutPer1MIdr: 12000 };
   const plan = { markup: 1 };
 
   it('menghitung in+out dengan markup dan ceil', () => {
     const c = computeCost({ model, plan, promptTokens: 1200, completionTokens: 800 });
-    // (1.2*4 + 0.8*12) * 1 = 9.6 → 10
-    expect(c).toBe(10);
+    // (0.0012*4000 + 0.0008*12000) * 1 = 14.4 → 15
+    expect(c).toBe(15);
   });
 
   it('ceil ke rupiah untuk pecahan kecil', () => {
     const c = computeCost({ model, plan, promptTokens: 100, completionTokens: 0 });
-    // 0.1*4*1.35 = 0.54 → 1
+    // 0.0001*4000 = 0.4 → 1
     expect(c).toBe(1);
   });
 

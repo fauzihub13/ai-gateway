@@ -278,7 +278,7 @@ curl -X POST https://app.mpruy.ai/api/keys \
 
 | Method | Path | Response |
 |---|---|---|
-| GET | `/api/models` | `{ models: [{ publicName, displayName, contextWindow, capabilities, priceInPer1kIdr, priceOutPer1kIdr }] }` |
+| GET | `/api/models` | `{ models: [{ publicName, displayName, contextWindow, capabilities, priceInPer1MIdr, priceOutPer1MIdr }] }` |
 
 > Harga yang ditampilkan = harga final untuk plan user (sudah termasuk markup).
 

@@ -2,7 +2,7 @@ import { db } from './db';
 import type { UsageStatus } from '@prisma/client';
 
 export function computeCost(opts: {
-  model: { priceInPer1kIdr: number; priceOutPer1kIdr: number; priceCachedInPer1kIdr?: number | null };
+  model: { priceInPer1MIdr: number; priceOutPer1MIdr: number; priceCachedInPer1MIdr?: number | null };
   plan: { markup: number };
   promptTokens: number;
   completionTokens: number;
@@ -10,14 +10,14 @@ export function computeCost(opts: {
 }): number {
   const { model, plan, promptTokens, completionTokens } = opts;
 
-  // Token cached dihargai priceCachedInPer1kIdr bila di-set, kalau tidak (null/undefined)
+  // Token cached dihargai priceCachedInPer1MIdr bila di-set, kalau tidak (null/undefined)
   // fallback ke harga input normal — jadi model lama tidak berubah biayanya.
   const cached = Math.min(Math.max(opts.cachedPromptTokens ?? 0, 0), Math.max(promptTokens, 0));
   const nonCached = Math.max(promptTokens - cached, 0);
-  const cachedInPrice = model.priceCachedInPer1kIdr ?? model.priceInPer1kIdr;
+  const cachedInPrice = model.priceCachedInPer1MIdr ?? model.priceInPer1MIdr;
 
-  const inCost = (nonCached / 1000) * model.priceInPer1kIdr + (cached / 1000) * cachedInPrice;
-  const outCost = (completionTokens / 1000) * model.priceOutPer1kIdr;
+  const inCost = (nonCached / 1_000_000) * model.priceInPer1MIdr + (cached / 1_000_000) * cachedInPrice;
+  const outCost = (completionTokens / 1_000_000) * model.priceOutPer1MIdr;
   const raw = (inCost + outCost) * plan.markup;
   return Math.ceil(raw);
 }
@@ -27,10 +27,10 @@ export function computeCost(opts: {
  * nol untuk input maupun output. Dipakai agar user bersaldo 0 tetap boleh memakai model gratis.
  */
 export function isFreeModel(
-  model: { priceInPer1kIdr: number; priceOutPer1kIdr: number },
+  model: { priceInPer1MIdr: number; priceOutPer1MIdr: number },
   plan: { markup: number },
 ): boolean {
-  return model.priceInPer1kIdr * plan.markup <= 0 && model.priceOutPer1kIdr * plan.markup <= 0;
+  return model.priceInPer1MIdr * plan.markup <= 0 && model.priceOutPer1MIdr * plan.markup <= 0;
 }
 
 export interface SettleInput {

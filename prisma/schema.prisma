@@ -123,11 +123,11 @@ model Model {
   description      String?
   contextWindow    Int
   maxOutputTokens  Int?
-  priceInPer1kIdr  Int
-  priceOutPer1kIdr Int
+  priceInPer1MIdr  Int
+  priceOutPer1MIdr Int
   // Harga input untuk token yang kena cache upstream. null = tidak ada diskon
-  // (token cached tetap dihargai priceInPer1kIdr), agar model lama tidak berubah perilakunya.
-  priceCachedInPer1kIdr Int?
+  // (token cached tetap dihargai priceInPer1MIdr), agar model lama tidak berubah perilakunya.
+  priceCachedInPer1MIdr Int?
   capabilities     Json      @default("{}")
   isActive         Boolean   @default(true)
   deprecatedAt     DateTime? @db.Timestamptz

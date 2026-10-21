@@ -28,9 +28,9 @@ const CreateSchema = z.object({
   description: z.string().max(500).optional(),
   contextWindow: z.number().int().min(1),
   maxOutputTokens: z.number().int().min(1).optional(),
-  priceInPer1kIdr: z.number().int().min(0),
-  priceOutPer1kIdr: z.number().int().min(0),
-  priceCachedInPer1kIdr: z.number().int().min(0).nullable().optional(),
+  priceInPer1MIdr: z.number().int().min(0),
+  priceOutPer1MIdr: z.number().int().min(0),
+  priceCachedInPer1MIdr: z.number().int().min(0).nullable().optional(),
   capabilities: z.record(z.boolean()).default({}),
   plans: z.array(z.string()).default([]),
 });
@@ -53,9 +53,9 @@ export async function POST(req: Request) {
         description: body.description,
         contextWindow: body.contextWindow,
         maxOutputTokens: body.maxOutputTokens,
-        priceInPer1kIdr: body.priceInPer1kIdr,
-        priceOutPer1kIdr: body.priceOutPer1kIdr,
-        priceCachedInPer1kIdr: body.priceCachedInPer1kIdr ?? null,
+        priceInPer1MIdr: body.priceInPer1MIdr,
+        priceOutPer1MIdr: body.priceOutPer1MIdr,
+        priceCachedInPer1MIdr: body.priceCachedInPer1MIdr ?? null,
         capabilities: body.capabilities,
       },
     });
@@ -106,12 +106,12 @@ export async function PATCH(req: Request) {
       data: {
         displayName: body.displayName as string | undefined,
         internalName: body.internalName as string | undefined,
-        priceInPer1kIdr: body.priceInPer1kIdr as number | undefined,
-        priceOutPer1kIdr: body.priceOutPer1kIdr as number | undefined,
-        priceCachedInPer1kIdr:
-          body.priceCachedInPer1kIdr === undefined
+        priceInPer1MIdr: body.priceInPer1MIdr as number | undefined,
+        priceOutPer1MIdr: body.priceOutPer1MIdr as number | undefined,
+        priceCachedInPer1MIdr:
+          body.priceCachedInPer1MIdr === undefined
             ? undefined
-            : (body.priceCachedInPer1kIdr as number | null),
+            : (body.priceCachedInPer1MIdr as number | null),
         capabilities: body.capabilities as object | undefined,
         isActive: body.isActive as boolean | undefined,
         deprecatedAt: body.isActive === false ? new Date() : undefined,

@@ -142,13 +142,13 @@ export default async function Home() {
   const [modelRows, planRows] = await Promise.all([
     db.model.findMany({
       where: { isActive: true },
-      orderBy: { priceInPer1kIdr: 'asc' },
+      orderBy: { priceInPer1MIdr: 'asc' },
       select: {
         publicName: true,
         displayName: true,
         contextWindow: true,
-        priceInPer1kIdr: true,
-        priceOutPer1kIdr: true,
+        priceInPer1MIdr: true,
+        priceOutPer1MIdr: true,
         capabilities: true,
       },
     }),
@@ -163,8 +163,8 @@ export default async function Home() {
     publicName: m.publicName,
     displayName: m.displayName,
     contextWindow: m.contextWindow,
-    priceInPer1kIdr: m.priceInPer1kIdr,
-    priceOutPer1kIdr: m.priceOutPer1kIdr,
+    priceInPer1MIdr: m.priceInPer1MIdr,
+    priceOutPer1MIdr: m.priceOutPer1MIdr,
     capabilities: (m.capabilities as Caps) ?? {},
   }));
 

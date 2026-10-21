@@ -26,9 +26,9 @@ interface ModelRow {
   internalName: string;
   displayName: string;
   contextWindow: number;
-  priceInPer1kIdr: number;
-  priceOutPer1kIdr: number;
-  priceCachedInPer1kIdr: number | null;
+  priceInPer1MIdr: number;
+  priceOutPer1MIdr: number;
+  priceCachedInPer1MIdr: number | null;
   capabilities: Record<string, boolean>;
   isActive: boolean;
   plans: Array<{ plan: { name: string } }>;
@@ -39,9 +39,9 @@ const EMPTY = {
   internalName: '',
   displayName: '',
   contextWindow: 128000,
-  priceInPer1kIdr: 4,
-  priceOutPer1kIdr: 12,
-  priceCachedInPer1kIdr: null as number | null,
+  priceInPer1MIdr: 4,
+  priceOutPer1MIdr: 12,
+  priceCachedInPer1MIdr: null as number | null,
   capabilities: { stream: true, vision: false, tools: true, jsonMode: true } as Record<string, boolean>,
 };
 
@@ -101,9 +101,9 @@ export default function AdminModelsPage() {
       internalName: m.internalName,
       displayName: m.displayName,
       contextWindow: m.contextWindow,
-      priceInPer1kIdr: m.priceInPer1kIdr,
-      priceOutPer1kIdr: m.priceOutPer1kIdr,
-      priceCachedInPer1kIdr: m.priceCachedInPer1kIdr,
+      priceInPer1MIdr: m.priceInPer1MIdr,
+      priceOutPer1MIdr: m.priceOutPer1MIdr,
+      priceCachedInPer1MIdr: m.priceCachedInPer1MIdr,
       capabilities: m.capabilities,
     });
   }
@@ -187,29 +187,29 @@ export default function AdminModelsPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Harga in / 1k (IDR)</Label>
+              <Label>Harga in / 1M (IDR)</Label>
               <Input
                 type="number"
-                value={form.priceInPer1kIdr}
-                onChange={(e) => setForm({ ...form, priceInPer1kIdr: Number(e.target.value) })}
+                value={form.priceInPer1MIdr}
+                onChange={(e) => setForm({ ...form, priceInPer1MIdr: Number(e.target.value) })}
               />
             </div>
             <div className="space-y-2">
-              <Label>Harga out / 1k (IDR)</Label>
+              <Label>Harga out / 1M (IDR)</Label>
               <Input
                 type="number"
-                value={form.priceOutPer1kIdr}
-                onChange={(e) => setForm({ ...form, priceOutPer1kIdr: Number(e.target.value) })}
+                value={form.priceOutPer1MIdr}
+                onChange={(e) => setForm({ ...form, priceOutPer1MIdr: Number(e.target.value) })}
               />
             </div>
             <div className="space-y-2">
-              <Label>Harga in cache / 1k (IDR)</Label>
+              <Label>Harga in cache / 1M (IDR)</Label>
               <Input
                 type="number"
                 placeholder="kosong = tanpa diskon"
-                value={form.priceCachedInPer1kIdr ?? ''}
+                value={form.priceCachedInPer1MIdr ?? ''}
                 onChange={(e) =>
-                  setForm({ ...form, priceCachedInPer1kIdr: e.target.value === '' ? null : Number(e.target.value) })
+                  setForm({ ...form, priceCachedInPer1MIdr: e.target.value === '' ? null : Number(e.target.value) })
                 }
               />
             </div>
@@ -269,8 +269,8 @@ export default function AdminModelsPage() {
                   <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{m.internalName}</code>
                 </TableCell>
                 <TableCell className="text-right">
-                  {formatIdr(m.priceInPer1kIdr)} / {formatIdr(m.priceOutPer1kIdr)} /{' '}
-                  {m.priceCachedInPer1kIdr == null ? '—' : formatIdr(m.priceCachedInPer1kIdr)}
+                  {formatIdr(m.priceInPer1MIdr)} / {formatIdr(m.priceOutPer1MIdr)} /{' '}
+                  {m.priceCachedInPer1MIdr == null ? '—' : formatIdr(m.priceCachedInPer1MIdr)}
                 </TableCell>
                 <TableCell>
                   <Badge variant={m.isActive ? 'success' : 'secondary'}>{m.isActive ? 'ACTIVE' : 'OFF'}</Badge>

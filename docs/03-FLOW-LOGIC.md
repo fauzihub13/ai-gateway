@@ -221,11 +221,11 @@ Request model "X" dari user dengan plan P, key K
 ## 7. Billing calculation
 
 ```
-cost_idr = (prompt_tokens  / 1000 * price_in_per_1k  * markup)
-         + (completion_tokens / 1000 * price_out_per_1k * markup)
+cost_idr = (prompt_tokens     / 1_000_000 * price_in_per_1m  * markup)
+         + (completion_tokens / 1_000_000 * price_out_per_1m * markup)
 
 where:
-  price_in_per_1k, price_out_per_1k = harga dasar model (di tabel Model, IDR)
+  price_in_per_1m, price_out_per_1m = harga dasar model per 1 juta token (tabel Model, IDR)
   markup = faktor per plan (saat ini hanya plan free, markup 1)
            — ATAU harga final per plan langsung disimpan (lihat [08-MODEL-MAPPING.md])
 

@@ -103,7 +103,7 @@ Sitemap, wireframe tiap halaman, komponen reusable, design system, responsive, a
 │  └────────────┘                                                │
 │                                                                │
 │  Tabel harga per model (harga final, sudah termasuk markup)    │
-│  Model | Input/1k | Output/1k | Konteks                        │
+│  Model | Input/1M | Output/1M | Konteks                       │
 └──────────────────────────────────────────────────────────────┘
 ```
 

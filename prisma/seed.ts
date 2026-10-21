@@ -13,7 +13,7 @@ async function main() {
   }
 
   const models = [
-    { publicName: 'mimo', internalName: 'mimo-free', displayName: 'MiMo', contextWindow: 1_048_576, maxOutputTokens: 131_072, priceInPer1kIdr: 4, priceOutPer1kIdr: 12, capabilities: { stream: true, vision: true, tools: true, jsonMode: true } },
+    { publicName: 'mimo', internalName: 'mimo-free', displayName: 'MiMo', contextWindow: 1_048_576, maxOutputTokens: 131_072, priceInPer1MIdr: 4_000, priceOutPer1MIdr: 12_000, capabilities: { stream: true, vision: true, tools: true, jsonMode: true } },
   ];
   for (const m of models) {
     await db.model.upsert({ where: { publicName: m.publicName }, create: m, update: m });

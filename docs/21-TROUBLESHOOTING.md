@@ -172,7 +172,7 @@ Lihat [18-MONITORING.md](./18-MONITORING.md).
 ```
 [ ] User kirim internalName (mimo-free) → 404 (benar, jangan bocor)
 [ ] Model ada di 9Router tapi 404 di platform → belum didaftarkan di DB
-[ ] Harga jual salah → cek priceIn/OutPer1kIdr & markup plan
+[ ] Harga jual salah → cek priceIn/OutPer1MIdr & markup plan
 [ ] Model deprecated masih muncul → cek isActive
 [ ] Response stream masih tampilkan internal model → cek rewrite di normalizer
 [ ] capabilities salah (tools ditolak) → update capabilities JSON

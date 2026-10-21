@@ -114,8 +114,9 @@ Index: `keyHash` (unique), `userId`, `status`.
 | description | String? | | |
 | contextWindow | Int | not null | token |
 | maxOutputTokens | Int? | | |
-| priceInPer1kIdr | Int | not null | harga dasar per 1k input (IDR) |
-| priceOutPer1kIdr | Int | not null | harga dasar per 1k output (IDR) |
+| priceInPer1MIdr | Int | not null | harga dasar per 1 juta input (IDR) |
+| priceOutPer1MIdr | Int | not null | harga dasar per 1 juta output (IDR) |
+| priceCachedInPer1MIdr | Int? | | harga input cache-hit; NULL = pakai priceInPer1MIdr |
 | capabilities | Json | default `{}` | `{ stream, vision, tools, jsonMode }` |
 | isActive | Boolean | not null, default true | |
 | deprecatedAt | DateTime? | | |
@@ -328,8 +329,9 @@ model Model {
   description     String?
   contextWindow   Int
   maxOutputTokens Int?
-  priceInPer1kIdr Int
-  priceOutPer1kIdr Int
+  priceInPer1MIdr  Int
+  priceOutPer1MIdr Int
+  priceCachedInPer1MIdr Int?
   capabilities    Json      @default("{}")
   isActive        Boolean   @default(true)
   deprecatedAt    DateTime? @db.Timestamptz
@@ -493,7 +495,7 @@ async function main() {
   }
 
   const models = [
-    { publicName: 'mimo', internalName: 'mimo-free', displayName: 'MiMo', contextWindow: 1_048_576, maxOutputTokens: 131_072, priceInPer1kIdr: 4, priceOutPer1kIdr: 12, capabilities: { stream: true, vision: true, tools: true, jsonMode: true } },
+    { publicName: 'mimo', internalName: 'mimo-free', displayName: 'MiMo', contextWindow: 1_048_576, maxOutputTokens: 131_072, priceInPer1MIdr: 4000, priceOutPer1MIdr: 12000, capabilities: { stream: true, vision: true, tools: true, jsonMode: true } },
   ];
   for (const m of models) {
     await db.model.upsert({ where: { publicName: m.publicName }, create: m, update: m });

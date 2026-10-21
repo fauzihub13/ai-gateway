@@ -14,8 +14,8 @@ export interface PublicModel {
   publicName: string;
   displayName: string;
   contextWindow: number;
-  priceInPer1kIdr: number;
-  priceOutPer1kIdr: number;
+  priceInPer1MIdr: number;
+  priceOutPer1MIdr: number;
   capabilities: ModelCapabilities;
 }
 
@@ -63,8 +63,8 @@ export function publicModelView(model: Model, plan: Pick<Plan, 'markup'>): Publi
     publicName: model.publicName,
     displayName: model.displayName,
     contextWindow: model.contextWindow,
-    priceInPer1kIdr: Math.ceil(model.priceInPer1kIdr * plan.markup),
-    priceOutPer1kIdr: Math.ceil(model.priceOutPer1kIdr * plan.markup),
+    priceInPer1MIdr: Math.ceil(model.priceInPer1MIdr * plan.markup),
+    priceOutPer1MIdr: Math.ceil(model.priceOutPer1MIdr * plan.markup),
     capabilities: caps,
   };
 }
