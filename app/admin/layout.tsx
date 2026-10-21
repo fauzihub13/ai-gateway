@@ -6,6 +6,8 @@ import { Shell, type NavItem } from '@/components/shell';
 const items: NavItem[] = [
   { href: '/admin', label: 'Overview', icon: 'dashboard' },
   { href: '/admin/users', label: 'Users', icon: 'users' },
+  { href: '/admin/usage', label: 'Usage', icon: 'usage' },
+  { href: '/admin/logs', label: 'Log Request', icon: 'audit' },
   { href: '/admin/models', label: 'Models', icon: 'models' },
   { href: '/admin/plans', label: 'Plans', icon: 'plans' },
   { href: '/admin/transactions', label: 'Transaksi', icon: 'transactions' },
