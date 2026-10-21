@@ -14,8 +14,11 @@ export async function GET(req: Request) {
     const take = Math.min(Number(searchParams.get('limit') ?? 25), 100);
     const cursor = searchParams.get('cursor') ?? undefined;
 
+    const provider = searchParams.get('provider') ?? undefined;
+
     const where: Record<string, unknown> = {};
     if (status) where.status = status;
+    if (provider) where.provider = provider;
 
     const items = await db.transaction.findMany({
       where,

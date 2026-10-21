@@ -46,6 +46,11 @@ enum TrxnStatus {
   REFUNDED
 }
 
+enum PaymentProvider {
+  MIDTRANS
+  QRIS_MANUAL
+}
+
 enum LedgerReason {
   TOPUP
   USAGE
@@ -193,19 +198,31 @@ model Transaction {
   orderId       String     @unique
   userId        String
   user          User       @relation(fields: [userId], references: [id])
+  // Nominal saldo yang dikreditkan saat PAID.
   amountIdr     Int
   status        TrxnStatus @default(PENDING)
+  provider      PaymentProvider @default(MIDTRANS)
+  // QRIS manual: nominal transfer = amountIdr + uniqueCode (1..200), verifikasi oleh admin.
+  uniqueCode    Int        @default(0)
+  payAmountIdr  Int?
+  qrisPayload   String?
+  // Kunci unik sementara: "qris:<payAmountIdr>" selama PENDING, null setelah final.
+  // Unik → dua transaksi pending tidak bisa punya nominal bayar sama (tanpa partial index).
+  payAmountKey  String?    @unique
   method        String?
   snapToken     String?
   redirectUrl   String?
   midtransTxnId String?
+  expiresAt     DateTime?  @db.Timestamptz
   paidAt        DateTime?  @db.Timestamptz
   rawPayload    Json?
   createdAt     DateTime   @default(now()) @db.Timestamptz
   updatedAt     DateTime   @updatedAt @db.Timestamptz
 
   @@index([userId, status])
+  @@index([userId, createdAt])
   @@index([createdAt])
+  @@index([provider, status])
 }
 
 model BalanceLedger {

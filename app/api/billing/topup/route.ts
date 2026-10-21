@@ -5,6 +5,7 @@ import { requireUser, assertCsrf } from '@/lib/auth';
 import { snap } from '@/lib/midtrans';
 import { toErrorResponse, BadRequestError } from '@/lib/errors';
 import { getRequestId, json } from '@/lib/http';
+import { MIDTRANS_ENABLED, TOPUP_MAX_IDR, TOPUP_MIN_IDR, TOPUP_STEP_IDR } from '@/lib/topup';
 
 export const runtime = 'nodejs';
 
@@ -12,14 +13,18 @@ const Schema = z.object({
   amountIdr: z
     .number()
     .int()
-    .min(10_000)
-    .max(50_000_000)
-    .refine((v) => v % 1000 === 0, 'amount must be a multiple of 1000'),
+    .min(TOPUP_MIN_IDR)
+    .max(TOPUP_MAX_IDR)
+    .refine((v) => v % TOPUP_STEP_IDR === 0, `amount must be a multiple of ${TOPUP_STEP_IDR}`),
 });
 
 export async function POST(req: Request) {
   const requestId = getRequestId(req);
   try {
+    if (!MIDTRANS_ENABLED) {
+      throw new BadRequestError('midtrans_disabled', 'Top-up otomatis belum tersedia. Gunakan QRIS.');
+    }
+
     const s = await requireUser();
     assertCsrf(req);
     const { amountIdr } = Schema.parse(await req.json());

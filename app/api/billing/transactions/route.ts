@@ -21,6 +21,7 @@ export async function GET(req: Request) {
         take: limit,
         select: {
           id: true, orderId: true, amountIdr: true, status: true,
+          provider: true, uniqueCode: true, payAmountIdr: true, qrisPayload: true, expiresAt: true,
           method: true, redirectUrl: true, paidAt: true, createdAt: true,
         },
       }),

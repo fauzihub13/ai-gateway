@@ -41,6 +41,8 @@ export async function applyStatus(
       where: { orderId },
       data: {
         status: newStatus as TrxnStatus,
+        // Transaksi sudah final → lepas kunci nominal bayar QRIS.
+        payAmountKey: null,
         midtransTxnId: meta.transactionId ?? null,
         method: meta.paymentType ?? null,
         rawPayload: redactPayload(meta.raw),

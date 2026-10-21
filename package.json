@@ -13,12 +13,13 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-  "logo:generate": "node scripts/gen-logo.mjs && node scripts/gen-logo-m.mjs",
+    "logo:generate": "node scripts/gen-logo.mjs && node scripts/gen-logo-m.mjs",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
-    "mail:test": "node --env-file=.env --import tsx scripts/mail-test.ts"
+    "mail:test": "node --env-file=.env --import tsx scripts/mail-test.ts",
+    "qris:decode": "tsx scripts/qris-decode.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -45,6 +46,7 @@
     "next": "14.2.5",
     "next-themes": "^0.3.0",
     "nodemailer": "^6.9.14",
+    "qrcode": "^1.5.4",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "resend": "3.4.0",
@@ -55,11 +57,14 @@
   "devDependencies": {
     "@types/node": "20.14.12",
     "@types/nodemailer": "^6.4.15",
+    "@types/qrcode": "^1.5.5",
     "@types/react": "18.3.3",
     "@types/react-dom": "18.3.0",
     "autoprefixer": "^10.6.1",
     "eslint": "8.57.0",
     "eslint-config-next": "14.2.5",
+    "jsqr": "^1.4.0",
+    "pngjs": "^7.0.0",
     "postcss": "^8.5.30",
     "prisma": "5.14.0",
     "tailwindcss": "^3.4.7",

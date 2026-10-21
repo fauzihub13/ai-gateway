@@ -178,9 +178,15 @@ Index: `requestId` (unique), `(userId, createdAt)`, `(modelId, createdAt)`.
 | id | String | PK | |
 | orderId | String | UNIQUE, not null | `TRX-<nanoid>` |
 | userId | String | FK → User, index | |
-| amountIdr | Int | not null | nominal top-up |
+| amountIdr | Int | not null | nominal saldo yang dikreditkan saat PAID |
 | status | TrxnStatus | not null, default `PENDING` | PENDING/PAID/FAILED/EXPIRED/REFUNDED |
-| method | String? | | midtrans channel |
+| provider | PaymentProvider | not null, default `MIDTRANS` | MIDTRANS / QRIS_MANUAL |
+| uniqueCode | Int | not null, default 0 | QRIS manual: 1..999, pembeda nominal |
+| payAmountIdr | Int? | | QRIS manual: `amountIdr + uniqueCode` |
+| qrisPayload | String? | | snapshot payload QRIS dinamis |
+| payAmountKey | String? | UNIQUE | `qris:<payAmountIdr>` selama PENDING, NULL setelah final |
+| expiresAt | DateTime? | | QRIS manual: batas bayar |
+| method | String? | | midtrans channel / `QRIS_MANUAL` |
 | snapToken | String? | | |
 | redirectUrl | String? | | |
 | midtransTxnId | String? | | |
@@ -393,16 +399,25 @@ model Transaction {
   user         User       @relation(fields: [userId], references: [id])
   amountIdr    Int
   status       TrxnStatus @default(PENDING)
+  provider     PaymentProvider @default(MIDTRANS)
+  uniqueCode   Int        @default(0)
+  payAmountIdr Int?
+  qrisPayload  String?
+  // Kunci unik sementara: "qris:<payAmountIdr>" selama PENDING, NULL setelah final.
+  payAmountKey String?    @unique
   method       String?
   snapToken    String?
   redirectUrl  String?
   midtransTxnId String?
+  expiresAt    DateTime?  @db.Timestamptz
   paidAt       DateTime?  @db.Timestamptz
   rawPayload   Json?
   createdAt    DateTime   @default(now()) @db.Timestamptz
   updatedAt    DateTime   @updatedAt @db.Timestamptz
 
   @@index([userId, status])
+  @@index([userId, createdAt])
+  @@index([provider, status])
   @@index([createdAt])
 }
 

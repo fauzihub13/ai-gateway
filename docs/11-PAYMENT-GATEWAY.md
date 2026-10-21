@@ -336,9 +336,148 @@ if (Math.round(parseFloat(body.gross_amount)) !== trx.amountIdr) {
 
 ---
 
-## 12. Referensi
+## 12. Top-up QRIS manual (QRIS statis → dinamis + kode unik)
+
+Metode kedua, tanpa payment gateway: merchant punya satu QRIS **statis** (NMid/merchant).
+Platform mengubahnya jadi QRIS **dinamis** dengan nominal `amountIdr + uniqueCode`, lalu admin
+memverifikasi mutasi secara manual.
+
+Referensi implementasi TLV/CRC16: [verssache/qris-dinamis](https://github.com/verssache/qris-dinamis).
+
+### 12.1 Kenapa kode unik
+
+QRIS statis tidak membawa identitas transaksi. Bila 5 user top-up Rp100.000 bersamaan, mutasi
+masuk terlihat identik dan tidak bisa dicocokkan. Kode unik **1..200** membuat nominal bayar
+selalu berbeda, tanpa menambah nominal yang harus dibayar user secara berlebihan:
+
+| amountIdr | uniqueCode | payAmountIdr |
+|---|---|---|
+| 100000 | 37 | 100037 |
+| 100000 | 112 | 100112 |
+| 50000 | 8 | 50008 |
+
+Konsekuensinya: maksimal 200 transaksi `PENDING` per nominal. Lebih dari itu → 409
+`qris_code_exhausted` (lihat §12.7).
+
+Saldo yang dikreditkan tetap `amountIdr`. Kode unik bukan pendapatan — selisihnya menjadi
+biaya pencocokan (atau dikembalikan lewat adjustment bila diminta).
+
+### 12.2 Konfigurasi
+
+```
+QRIS_STATIC_PAYLOAD   payload TLV hasil scan QRIS statis (string, bukan gambar)
+QRIS_EXPIRY_HOURS     masa berlaku transaksi (default 24)
+```
+
+Ambil payload dengan scan QR pakai aplikasi pembaca QR apa pun yang menampilkan isi teks
+(mis. aplikasi "QR & Barcode Scanner"), bukan sekadar membuka gambar QR.
+
+Validasi saat start: `validateQris()` menolak payload dengan CRC salah, sehingga salah copy
+langsung ketahuan, bukan setelah user transfer.
+
+### 12.3 Flow
+
+```
+User ──pilih nominal────▶ POST /api/billing/topup/qris { amountIdr }
+                              │
+                        1. validasi nominal (min 10.000, kelipatan 1.000)
+                        2. expire transaksi QRIS PENDING yang lewat masa berlaku
+                        3. ambil kode unik 1..200 yang belum dipakai untuk nominal ini,
+                           pilih acak dari yang kosong → payAmountIdr = amountIdr + kode
+                        4. toDynamicQris(QRIS_STATIC_PAYLOAD, payAmountIdr)
+                           (tag 01: 11→12, inject tag 54, hitung ulang CRC tag 63)
+                        5. INSERT Transaction { provider: QRIS_MANUAL, payAmountKey }
+                           UNIQUE payAmountKey = "qris:<payAmountIdr>" → race dua request
+                           ditolak, ulangi langkah 3 (maks 5 percobaan)
+                        6. balas { qrDataUrl, payAmountIdr, uniqueCode, expiresAt }
+                              │
+User ──scan & bayar──────▶ mutasi masuk ke rekening merchant
+                              │
+Admin ──cek mutasi───────▶ POST /api/admin/transactions/:id/verify { action: approve }
+                              │
+                        applyStatus(orderId, 'PAID') → saldo += amountIdr + ledger TOPUP
+```
+
+### 12.4 Konversi QRIS
+
+`src/lib/qris.ts` — tanpa dependency, murni TLV + CRC16:
+
+```ts
+import { toDynamicQris, validateQris, readQris } from '@/lib/qris';
+
+validateQris(process.env.QRIS_STATIC_PAYLOAD!); // { valid: true }
+readQris(payload);                                // { static: true, merchantName, merchantCity, ... }
+toDynamicQris(payload, 100_037);                  // payload dinamis + CRC baru
+```
+
+Aturan EMVCo yang dipakai:
+
+| Tag | Aksi |
+|---|---|
+| `01` | `11` (statis) → `12` (dinamis) |
+| `54` | inject nominal (`payAmountIdr`, bilangan bulat, tanpa desimal) |
+| `55/56/57` | dibuang (tip/fee lama tidak relevan) |
+| `63` | dihitung ulang: CRC16-CCITT-FALSE, poly `0x1021`, init `0xFFFF`, atas body + `"6304"` |
+
+Nominal QRIS **tidak boleh desimal dan tidak boleh > 13 digit** — divalidasi di `toDynamicQris`.
+
+Generate gambar QR di server (bukan di client) supaya payload tidak bisa dimodifikasi user:
+
+```ts
+const qrDataUrl = await QRCode.toDataURL(qrisPayload, { width: 512, margin: 1 });
+```
+
+> Dependency: `qrcode` + `@types/qrcode`. Client cukup menampilkan `<img src={qrDataUrl}>`.
+
+### 12.5 Anti tabrakan nominal
+
+Bukan pakai partial index (Prisma 5 belum mendukung deklarasi `WHERE` di schema), tapi kolom
+`payAmountKey` yang `@unique`:
+
+- diisi `qris:<payAmountIdr>` saat `PENDING`
+- di-NULL-kan saat `PAID` / `FAILED` / `EXPIRED` / `REFUNDED`
+
+Postgres mengizinkan banyak `NULL` di unique index, jadi setelah transaksi final nominal itu
+boleh dipakai lagi. Pelanggaran unique (Prisma `P2002`) ditangkap lalu kode unik diacak ulang.
+
+### 12.6 Verifikasi manual
+
+```ts
+POST /api/admin/transactions/:id/verify
+{ "action": "approve" | "reject", "note": " opsional " }
+```
+
+| Cek | Perilaku |
+|---|---|
+| Bukan `provider = QRIS_MANUAL` | 400 `not_manual_qris` |
+| Sudah `PAID`/`REFUNDED` | 200 `alreadyFinal: true`, tidak dobel kredit |
+| `expiresAt` sudah lewat | transaksi di-set `EXPIRED`, 400 `transaction_expired` — **jangan** di-approve |
+| `approve` | `applyStatus(…, 'PAID')` → saldo += `amountIdr`, ledger `TOPUP`, `payAmountKey = null` |
+| `reject` | status `FAILED`, tidak ada perubahan saldo |
+| Semua aksi | dicatat di `AdminAuditLog` (`transaction.qris.approve` / `.reject`) |
+
+Admin **wajib** mencocokkan `payAmountIdr` persis (termasuk kode unik), bukan hanya nominal
+bulat, sebelum approve. Bila dana masuk setelah transaksi kedaluwarsa, jangan approve —
+buat transaksi baru atau pakai adjustment saldo manual (lihat [16-ADMIN-PANEL.md](./16-ADMIN-PANEL.md)).
+
+### 12.7 Edge cases
+
+| Kasus | Penanganan |
+|---|---|
+| User transfer nominal bulat (tanpa kode) | tidak cocok dengan transaksi mana pun → verifikasi manual/adjustment |
+| Dua user pilih nominal sama | `payAmountKey` unik memaksa kode unik berbeda |
+| Semua 200 kode untuk nominal itu terpakai | 409 `qris_code_exhausted`, minta tunggu expired |
+| Transaksi kedaluwarsa tapi dana tetap masuk | admin adjustment, bukan approve |
+| QRIS statis diganti merchant (ganti rekening) | update `QRIS_STATIC_PAYLOAD`; transaksi lama tetap valid untuk verifikasi |
+| `QRIS_STATIC_PAYLOAD` kosong | endpoint balas 500 "belum dikonfigurasi" — UI tetap menampilkan tombol Midtrans |
+| Kode unik membuat nominal tidak bulat | wajar; user mengetik nominal persis dari halaman pembayaran |
+
+---
+
+## 13. Referensi
 
 - Ledger & saldo → [10-BILLING-USAGE.md](./10-BILLING-USAGE.md)
 - Admin reconcile → [16-ADMIN-PANEL.md](./16-ADMIN-PANEL.md)
+- Skema `Transaction` → [04-DATABASE-SCHEMA.md](./04-DATABASE-SCHEMA.md)
 - Security → [13-SECURITY.md](./13-SECURITY.md)
 - Contract webhook → [05-API-CONTRACT.md](./05-API-CONTRACT.md)
