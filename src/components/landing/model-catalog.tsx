@@ -95,8 +95,8 @@ export function ModelCatalog({ models }: { models: CatalogModel[] }) {
               <th className="px-4 py-3 tech-label font-normal">Model</th>
               <th className="px-4 py-3 tech-label font-normal">Context</th>
               <th className="px-4 py-3 tech-label font-normal">Capabilities</th>
-              <th className="px-4 py-3 tech-label font-normal text-right">In / 1K</th>
-              <th className="px-4 py-3 tech-label font-normal text-right">Out / 1K</th>
+              <th className="px-4 py-3 tech-label font-normal text-right">In / 1M</th>
+              <th className="px-4 py-3 tech-label font-normal text-right">Out / 1M</th>
               <th className="px-4 py-3" />
             </tr>
           </thead>
@@ -182,7 +182,7 @@ export function ModelCatalog({ models }: { models: CatalogModel[] }) {
                 <dd className="tabular mt-0.5 font-mono text-foreground">{formatNumber(m.contextWindow)}</dd>
               </div>
               <div>
-                <dt className="tech-label text-[9px]">In / 1K</dt>
+                <dt className="tech-label text-[9px]">In / 1M</dt>
                 <dd className="tabular mt-0.5 font-mono text-foreground">{formatIdr(m.priceInPer1MIdr)}</dd>
               </div>
               <div>
