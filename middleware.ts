@@ -49,6 +49,21 @@ export async function middleware(req: NextRequest) {
         });
       }
 
+      // Selalu perpanjang csrf_token di tiap request dashboard selama masih ada.
+      // NB: tanpa ini csrf_token yang TTL-nya sama dengan auth_token (3600s) tapi
+      // tidak ikut sliding akan expired setelah 1 jam, sementara auth_token tetap
+      // hidup via sliding di atas → semua mutation gagal CSRF padahal masih login.
+      const csrf = req.cookies.get('csrf_token')?.value;
+      if (csrf) {
+        res.cookies.set('csrf_token', csrf, {
+          httpOnly: false,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'lax',
+          path: '/',
+          maxAge: TTL_SECONDS,
+        });
+      }
+
       return res;
     } catch {
       return redirectLogin(req);
