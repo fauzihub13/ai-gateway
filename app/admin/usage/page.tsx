@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Activity, Coins, TrendingUp } from 'lucide-react';
+import { Activity, ArrowDownToLine, ArrowUpFromLine, Database, Sigma, TrendingUp } from 'lucide-react';
 import { PageHeader, StatCard } from '@/components/stat-card';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,9 @@ interface PerUser {
   userId: string;
   email: string;
   requests: number;
+  promptTokens: number;
+  completionTokens: number;
+  cachedPromptTokens: number;
   tokens: number;
   cost: number;
 }
@@ -24,15 +27,30 @@ interface PerUser {
 interface Bucket {
   key: string;
   requests: number;
+  promptTokens: number;
+  completionTokens: number;
+  cachedPromptTokens: number;
   tokens: number;
   cost: number;
 }
 
 interface Totals {
   requests: number;
+  promptTokens: number;
+  completionTokens: number;
+  cachedPromptTokens: number;
   tokens: number;
   cost: number;
 }
+
+const EMPTY_TOTALS: Totals = {
+  requests: 0,
+  promptTokens: 0,
+  completionTokens: 0,
+  cachedPromptTokens: 0,
+  tokens: 0,
+  cost: 0,
+};
 
 type Preset = '24h' | '7d' | '30d' | '90d' | 'custom';
 
@@ -55,6 +73,19 @@ function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString('id-ID', {
     day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
   });
+}
+
+function UsageStats({ totals }: { totals: Totals }) {
+  return (
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+      <StatCard label="Requests" value={formatNumber(totals.requests)} icon={Activity} />
+      <StatCard label="Token in" value={formatNumber(totals.promptTokens)} icon={ArrowDownToLine} />
+      <StatCard label="Token out" value={formatNumber(totals.completionTokens)} icon={ArrowUpFromLine} />
+      <StatCard label="Cached" value={formatNumber(totals.cachedPromptTokens)} icon={Database} />
+      <StatCard label="Total token" value={formatNumber(totals.tokens)} icon={Sigma} />
+      <StatCard label="Biaya" value={formatIdr(totals.cost)} icon={TrendingUp} accent="success" />
+    </div>
+  );
 }
 
 export default function AdminUsagePage() {
@@ -128,7 +159,7 @@ function PerUserTable({
   onSelect: (u: { id: string; email: string }) => void;
 }) {
   const [items, setItems] = useState<PerUser[]>([]);
-  const [totals, setTotals] = useState<Totals>({ requests: 0, tokens: 0, cost: 0 });
+  const [totals, setTotals] = useState<Totals>(EMPTY_TOTALS);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -139,7 +170,7 @@ function PerUserTable({
       .then((d) => {
         if (cancelled || !d) return;
         setItems(d.items ?? []);
-        setTotals(d.totals ?? { requests: 0, tokens: 0, cost: 0 });
+        setTotals(d.totals ?? EMPTY_TOTALS);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -151,11 +182,7 @@ function PerUserTable({
 
   return (
     <div>
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Requests" value={formatNumber(totals.requests)} icon={Activity} />
-        <StatCard label="Tokens" value={formatNumber(totals.tokens)} icon={Coins} />
-        <StatCard label="Biaya" value={formatIdr(totals.cost)} icon={TrendingUp} accent="success" />
-      </div>
+      <UsageStats totals={totals} />
 
       <Card className="mt-6">
         <Table>
@@ -163,7 +190,10 @@ function PerUserTable({
             <TableRow>
               <TableHead>User</TableHead>
               <TableHead className="text-right">Requests</TableHead>
-              <TableHead className="text-right">Tokens</TableHead>
+              <TableHead className="text-right">Token in</TableHead>
+              <TableHead className="text-right">Token out</TableHead>
+              <TableHead className="text-right">Cached</TableHead>
+              <TableHead className="text-right">Total token</TableHead>
               <TableHead className="text-right">Biaya</TableHead>
               <TableHead className="text-right">Aksi</TableHead>
             </TableRow>
@@ -172,7 +202,7 @@ function PerUserTable({
             {loading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={5}>
+                  <TableCell colSpan={8}>
                     <Skeleton className="h-5 w-full" />
                   </TableCell>
                 </TableRow>
@@ -182,6 +212,9 @@ function PerUserTable({
                 <TableRow key={u.userId}>
                   <TableCell className="font-medium">{u.email}</TableCell>
                   <TableCell className="tabular text-right">{formatNumber(u.requests)}</TableCell>
+                  <TableCell className="tabular text-right">{formatNumber(u.promptTokens)}</TableCell>
+                  <TableCell className="tabular text-right">{formatNumber(u.completionTokens)}</TableCell>
+                  <TableCell className="tabular text-right">{formatNumber(u.cachedPromptTokens)}</TableCell>
                   <TableCell className="tabular text-right">{formatNumber(u.tokens)}</TableCell>
                   <TableCell className="tabular text-right">{formatIdr(u.cost)}</TableCell>
                   <TableCell>
@@ -198,7 +231,7 @@ function PerUserTable({
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
                   Belum ada usage pada rentang ini.
                 </TableCell>
               </TableRow>
@@ -221,7 +254,7 @@ function UserDrilldown({
 }) {
   const [groupBy, setGroupBy] = useState<'day' | 'model' | 'key'>('day');
   const [items, setItems] = useState<Bucket[]>([]);
-  const [totals, setTotals] = useState<Totals>({ requests: 0, tokens: 0, cost: 0 });
+  const [totals, setTotals] = useState<Totals>(EMPTY_TOTALS);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -235,7 +268,7 @@ function UserDrilldown({
       .then((d) => {
         if (cancelled || !d) return;
         setItems(d.items ?? []);
-        setTotals(d.totals ?? { requests: 0, tokens: 0, cost: 0 });
+        setTotals(d.totals ?? EMPTY_TOTALS);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -262,11 +295,7 @@ function UserDrilldown({
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Requests" value={formatNumber(totals.requests)} icon={Activity} />
-        <StatCard label="Tokens" value={formatNumber(totals.tokens)} icon={Coins} />
-        <StatCard label="Biaya" value={formatIdr(totals.cost)} icon={TrendingUp} accent="success" />
-      </div>
+      <UsageStats totals={totals} />
 
       <div className="mt-6">
         <Tabs value={groupBy} onValueChange={(v) => setGroupBy(v as typeof groupBy)}>
@@ -284,7 +313,10 @@ function UserDrilldown({
             <TableRow>
               <TableHead className="capitalize">{groupBy}</TableHead>
               <TableHead className="text-right">Requests</TableHead>
-              <TableHead className="text-right">Tokens</TableHead>
+              <TableHead className="text-right">Token in</TableHead>
+              <TableHead className="text-right">Token out</TableHead>
+              <TableHead className="text-right">Cached</TableHead>
+              <TableHead className="text-right">Total token</TableHead>
               <TableHead className="text-right">Biaya</TableHead>
             </TableRow>
           </TableHeader>
@@ -292,7 +324,7 @@ function UserDrilldown({
             {loading ? (
               Array.from({ length: 4 }).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={4}>
+                  <TableCell colSpan={7}>
                     <Skeleton className="h-5 w-full" />
                   </TableCell>
                 </TableRow>
@@ -302,13 +334,16 @@ function UserDrilldown({
                 <TableRow key={i.key}>
                   <TableCell className="font-medium">{i.key}</TableCell>
                   <TableCell className="tabular text-right">{formatNumber(i.requests)}</TableCell>
+                  <TableCell className="tabular text-right">{formatNumber(i.promptTokens)}</TableCell>
+                  <TableCell className="tabular text-right">{formatNumber(i.completionTokens)}</TableCell>
+                  <TableCell className="tabular text-right">{formatNumber(i.cachedPromptTokens)}</TableCell>
                   <TableCell className="tabular text-right">{formatNumber(i.tokens)}</TableCell>
                   <TableCell className="tabular text-right">{formatIdr(i.cost)}</TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
                   Tidak ada usage pada rentang ini.
                 </TableCell>
               </TableRow>

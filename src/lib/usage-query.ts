@@ -202,12 +202,24 @@ export type UsageGroupBy = 'day' | 'model' | 'key';
 export interface UsageBucket {
   key: string;
   requests: number;
+  promptTokens: number;
+  completionTokens: number;
+  cachedPromptTokens: number;
+  tokens: number;
+  cost: number;
+}
+
+export interface UsageTotals {
+  requests: number;
+  promptTokens: number;
+  completionTokens: number;
+  cachedPromptTokens: number;
   tokens: number;
   cost: number;
 }
 
 export interface UsageSummary {
-  totals: { requests: number; tokens: number; cost: number };
+  totals: UsageTotals;
   items: UsageBucket[];
 }
 
@@ -232,6 +244,9 @@ export interface PerUserUsage {
   userId: string;
   email: string;
   requests: number;
+  promptTokens: number;
+  completionTokens: number;
+  cachedPromptTokens: number;
   tokens: number;
   cost: number;
 }
@@ -242,7 +257,7 @@ export async function summarizeByUser(opts: { from: Date; to: Date; limit?: numb
     by: ['userId'],
     where: { createdAt: { gte: opts.from, lte: opts.to }, status: { not: 'REJECTED' } },
     _count: { _all: true },
-    _sum: { totalTokens: true, costIdr: true },
+    _sum: { promptTokens: true, completionTokens: true, cachedPromptTokens: true, totalTokens: true, costIdr: true },
     orderBy: { _sum: { costIdr: 'desc' } },
     take: Math.min(Math.max(opts.limit ?? 100, 1), 500),
   });
@@ -257,6 +272,9 @@ export async function summarizeByUser(opts: { from: Date; to: Date; limit?: numb
     userId: r.userId,
     email: email[r.userId] ?? r.userId,
     requests: r._count._all,
+    promptTokens: r._sum.promptTokens ?? 0,
+    completionTokens: r._sum.completionTokens ?? 0,
+    cachedPromptTokens: r._sum.cachedPromptTokens ?? 0,
     tokens: r._sum.totalTokens ?? 0,
     cost: r._sum.costIdr ?? 0,
   }));
@@ -280,14 +298,41 @@ export async function summarizeUsage(
   const totalsAgg = await db.usageLog.aggregate({
     where,
     _count: { _all: true },
-    _sum: { totalTokens: true, costIdr: true },
+    _sum: { promptTokens: true, completionTokens: true, cachedPromptTokens: true, totalTokens: true, costIdr: true },
   });
 
   const totals = {
     requests: totalsAgg._count._all,
+    promptTokens: totalsAgg._sum.promptTokens ?? 0,
+    completionTokens: totalsAgg._sum.completionTokens ?? 0,
+    cachedPromptTokens: totalsAgg._sum.cachedPromptTokens ?? 0,
     tokens: totalsAgg._sum.totalTokens ?? 0,
     cost: totalsAgg._sum.costIdr ?? 0,
   };
+
+  const TOKEN_SUM = {
+    promptTokens: true,
+    completionTokens: true,
+    cachedPromptTokens: true,
+    totalTokens: true,
+    costIdr: true,
+  } as const;
+
+  const toBucket = (key: string, count: number, sum: {
+    promptTokens: number | null;
+    completionTokens: number | null;
+    cachedPromptTokens: number | null;
+    totalTokens: number | null;
+    costIdr: number | null;
+  }): UsageBucket => ({
+    key,
+    requests: count,
+    promptTokens: sum.promptTokens ?? 0,
+    completionTokens: sum.completionTokens ?? 0,
+    cachedPromptTokens: sum.cachedPromptTokens ?? 0,
+    tokens: sum.totalTokens ?? 0,
+    cost: sum.costIdr ?? 0,
+  });
 
   let items: UsageBucket[] = [];
 
@@ -296,7 +341,7 @@ export async function summarizeUsage(
       by: ['modelId'],
       where,
       _count: { _all: true },
-      _sum: { totalTokens: true, costIdr: true },
+      _sum: TOKEN_SUM,
       orderBy: { _sum: { costIdr: 'desc' } },
     });
     const models = await db.model.findMany({
@@ -304,18 +349,13 @@ export async function summarizeUsage(
       select: { id: true, publicName: true },
     });
     const names = Object.fromEntries(models.map((m) => [m.id, m.publicName]));
-    items = rows.map((r) => ({
-      key: names[r.modelId] ?? r.modelId,
-      requests: r._count._all,
-      tokens: r._sum.totalTokens ?? 0,
-      cost: r._sum.costIdr ?? 0,
-    }));
+    items = rows.map((r) => toBucket(names[r.modelId] ?? r.modelId, r._count._all, r._sum));
   } else if (opts.groupBy === 'key') {
     const rows = await db.usageLog.groupBy({
       by: ['apiKeyId'],
       where,
       _count: { _all: true },
-      _sum: { totalTokens: true, costIdr: true },
+      _sum: TOKEN_SUM,
       orderBy: { _sum: { costIdr: 'desc' } },
     });
     const ids = rows.map((r) => r.apiKeyId).filter((v): v is string => Boolean(v));
@@ -324,20 +364,28 @@ export async function summarizeUsage(
       select: { id: true, name: true, prefix: true, last4: true },
     });
     const names = Object.fromEntries(keys.map((k) => [k.id, `${k.name} (${k.prefix}…${k.last4})`]));
-    items = rows.map((r) => ({
-      key: r.apiKeyId ? names[r.apiKeyId] ?? r.apiKeyId : 'tanpa key',
-      requests: r._count._all,
-      tokens: r._sum.totalTokens ?? 0,
-      cost: r._sum.costIdr ?? 0,
-    }));
+    items = rows.map((r) =>
+      toBucket(r.apiKeyId ? names[r.apiKeyId] ?? r.apiKeyId : 'tanpa key', r._count._all, r._sum),
+    );
   } else {
     // Prisma groupBy tidak bisa date_trunc, jadi pakai raw.::"UsageStatus"
     // eksplisit supaya literal enum tidak ambigu.
     const rows = await db.$queryRaw<
-      Array<{ key: string; requests: bigint; tokens: bigint | null; cost: bigint | null }>
+      Array<{
+        key: string;
+        requests: bigint;
+        promptTokens: bigint | null;
+        completionTokens: bigint | null;
+        cachedPromptTokens: bigint | null;
+        tokens: bigint | null;
+        cost: bigint | null;
+      }>
     >(Prisma.sql`
       SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS key,
              count(*) AS requests,
+             COALESCE(sum("promptTokens"), 0) AS "promptTokens",
+             COALESCE(sum("completionTokens"), 0) AS "completionTokens",
+             COALESCE(sum("cachedPromptTokens"), 0) AS "cachedPromptTokens",
              COALESCE(sum("totalTokens"), 0) AS tokens,
              COALESCE(sum("costIdr"), 0) AS cost
       FROM "UsageLog"
@@ -351,6 +399,9 @@ export async function summarizeUsage(
     items = rows.map((r) => ({
       key: r.key,
       requests: Number(r.requests),
+      promptTokens: Number(r.promptTokens ?? 0),
+      completionTokens: Number(r.completionTokens ?? 0),
+      cachedPromptTokens: Number(r.cachedPromptTokens ?? 0),
       tokens: Number(r.tokens ?? 0),
       cost: Number(r.cost ?? 0),
     }));

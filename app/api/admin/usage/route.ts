@@ -26,8 +26,15 @@ export async function GET(req: Request) {
 
     const items = await summarizeByUser({ from: range.from, to: range.to, limit: 200 });
     const totals = items.reduce(
-      (a, i) => ({ requests: a.requests + i.requests, tokens: a.tokens + i.tokens, cost: a.cost + i.cost }),
-      { requests: 0, tokens: 0, cost: 0 },
+      (a, i) => ({
+        requests: a.requests + i.requests,
+        promptTokens: a.promptTokens + i.promptTokens,
+        completionTokens: a.completionTokens + i.completionTokens,
+        cachedPromptTokens: a.cachedPromptTokens + i.cachedPromptTokens,
+        tokens: a.tokens + i.tokens,
+        cost: a.cost + i.cost,
+      }),
+      { requests: 0, promptTokens: 0, completionTokens: 0, cachedPromptTokens: 0, tokens: 0, cost: 0 },
     );
 
     return json({ scope: 'all', ...range, totals, items }, 200, { 'x-request-id': requestId });
