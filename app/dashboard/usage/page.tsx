@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Activity, Coins, TrendingUp } from 'lucide-react';
+import { Activity, ArrowDownToLine, ArrowUpFromLine, Database, Sigma, TrendingUp } from 'lucide-react';
 import { PageHeader, StatCard } from '@/components/stat-card';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -23,9 +23,30 @@ import { apiFetch } from '@/lib/client';
 interface UsageItem {
   key: string;
   requests: number;
+  promptTokens: number;
+  completionTokens: number;
+  cachedPromptTokens: number;
   tokens: number;
   cost: number;
 }
+
+interface UsageTotals {
+  requests: number;
+  promptTokens: number;
+  completionTokens: number;
+  cachedPromptTokens: number;
+  tokens: number;
+  cost: number;
+}
+
+const EMPTY_TOTALS: UsageTotals = {
+  requests: 0,
+  promptTokens: 0,
+  completionTokens: 0,
+  cachedPromptTokens: 0,
+  tokens: 0,
+  cost: 0,
+};
 
 interface LogItem {
   id: string;
@@ -103,7 +124,7 @@ export default function UsagePage() {
 
 function SummaryTab() {
   const [items, setItems] = useState<UsageItem[]>([]);
-  const [totals, setTotals] = useState({ requests: 0, tokens: 0, cost: 0 });
+  const [totals, setTotals] = useState<UsageTotals>(EMPTY_TOTALS);
   const [groupBy, setGroupBy] = useState('day');
   const [loading, setLoading] = useState(true);
 
@@ -114,7 +135,7 @@ function SummaryTab() {
       .then((d) => {
         if (d) {
           setItems(d.items ?? []);
-          setTotals(d.totals ?? { requests: 0, tokens: 0, cost: 0 });
+          setTotals(d.totals ?? EMPTY_TOTALS);
         }
       })
       .finally(() => setLoading(false));
@@ -122,9 +143,12 @@ function SummaryTab() {
 
   return (
     <div>
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard label="Requests" value={formatNumber(totals.requests)} icon={Activity} />
-        <StatCard label="Tokens" value={formatNumber(totals.tokens)} icon={Coins} />
+        <StatCard label="Token in" value={formatNumber(totals.promptTokens)} icon={ArrowDownToLine} />
+        <StatCard label="Token out" value={formatNumber(totals.completionTokens)} icon={ArrowUpFromLine} />
+        <StatCard label="Cached" value={formatNumber(totals.cachedPromptTokens)} icon={Database} />
+        <StatCard label="Total token" value={formatNumber(totals.tokens)} icon={Sigma} />
         <StatCard label="Biaya" value={formatIdr(totals.cost)} icon={TrendingUp} accent="success" />
       </div>
 
@@ -144,7 +168,10 @@ function SummaryTab() {
             <TableRow>
               <TableHead className="capitalize">{groupBy}</TableHead>
               <TableHead className="text-right">Requests</TableHead>
-              <TableHead className="text-right">Tokens</TableHead>
+              <TableHead className="text-right">Token in</TableHead>
+              <TableHead className="text-right">Token out</TableHead>
+              <TableHead className="text-right">Cached</TableHead>
+              <TableHead className="text-right">Total token</TableHead>
               <TableHead className="text-right">Biaya</TableHead>
             </TableRow>
           </TableHeader>
@@ -152,7 +179,7 @@ function SummaryTab() {
             {loading ? (
               Array.from({ length: 4 }).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={4}>
+                  <TableCell colSpan={7}>
                     <Skeleton className="h-5 w-full" />
                   </TableCell>
                 </TableRow>
@@ -161,14 +188,17 @@ function SummaryTab() {
               items.map((i) => (
                 <TableRow key={i.key}>
                   <TableCell className="font-medium">{i.key}</TableCell>
-                  <TableCell className="text-right">{formatNumber(i.requests)}</TableCell>
-                  <TableCell className="text-right">{formatNumber(i.tokens)}</TableCell>
-                  <TableCell className="text-right">{formatIdr(i.cost)}</TableCell>
+                  <TableCell className="tabular text-right">{formatNumber(i.requests)}</TableCell>
+                  <TableCell className="tabular text-right">{formatNumber(i.promptTokens)}</TableCell>
+                  <TableCell className="tabular text-right">{formatNumber(i.completionTokens)}</TableCell>
+                  <TableCell className="tabular text-right">{formatNumber(i.cachedPromptTokens)}</TableCell>
+                  <TableCell className="tabular text-right">{formatNumber(i.tokens)}</TableCell>
+                  <TableCell className="tabular text-right">{formatIdr(i.cost)}</TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
                   Belum ada usage.
                 </TableCell>
               </TableRow>
