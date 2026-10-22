@@ -1,41 +1,46 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { cn } from '@/lib/utils';
+import { cn, formatIdr, formatNumber } from '@/lib/utils';
 
 /**
- * Illustrative dashboard preview. Numbers are static samples and are clearly
- * labelled as such — this is not live backend data.
+ * Observability preview di landing. Semua angka berasal dari agregat
+ * platform-wide (14 hari terakhir) yang di-query di server component —
+ * tidak ada data per-user, nama key, atau provider internal di sini.
  */
 
-const DAYS = ['01', '03', '05', '07', '09', '11', '13', '15', '17', '19', '21', '23', '25', '27'];
+export interface UsagePreviewData {
+  days: number;
+  requests: number;
+  tokens: number;
+  cost: number;
+  volume: Array<{ key: string; requests: number; tokens: number }>;
+  byModel: Array<{ name: string; share: number }>;
+  status: Array<{ label: string; count: number }>;
+}
 
-// request volume per day (sample)
-const VOLUME = [38, 52, 44, 61, 73, 58, 84, 96, 71, 88, 104, 92, 118, 131];
-// token consumption per day in thousands (sample)
-const TOKENS = [420, 610, 520, 700, 880, 640, 1020, 1180, 820, 1040, 1260, 1080, 1420, 1580];
-const PROVIDERS = [
-  { name: 'OpenAI', share: 46 },
-  { name: 'Anthropic', share: 27 },
-  { name: 'Google', share: 18 },
-  { name: 'Meta', share: 9 },
-];
-const STATUS = [
-  { label: '200', count: '128,402', tone: 'ok' as const },
-  { label: '429', count: '1,204', tone: 'warn' as const },
-  { label: '5xx', count: '38', tone: 'err' as const },
-];
+const STATUS_TONE: Record<string, 'ok' | 'warn' | 'err'> = {
+  COMPLETED: 'ok',
+  PARTIAL: 'warn',
+  ERROR: 'err',
+  REJECTED: 'warn',
+};
 
-function LineChart() {
+function shortDate(key: string): string {
+  const [, m, d] = key.split('-');
+  return `${d}/${m}`;
+}
+
+function LineChart({ volume }: { volume: UsagePreviewData['volume'] }) {
   const w = 520;
   const h = 120;
-  const max = Math.max(...VOLUME);
-  const pts = VOLUME.map((v, i) => {
-    const x = (i / (VOLUME.length - 1)) * w;
-    const y = h - (v / max) * (h - 12) - 6;
-    return [x, y] as const;
-  });
-  const line = pts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const values = volume.map((v) => v.requests);
+  const max = Math.max(1, ...values);
+  const step = values.length > 1 ? w / (values.length - 1) : w;
+  const pts = values.map((v, i) => [(i * step) as number, h - (v / max) * (h - 12) - 6] as const);
+  const line = pts.length
+    ? pts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
+    : `M0,${h}`;
   const area = `${line} L${w},${h} L0,${h} Z`;
 
   return (
@@ -51,55 +56,65 @@ function LineChart() {
       ))}
       <path d={area} fill="url(#area-fill)" />
       <path d={line} fill="none" stroke="hsl(var(--electric))" strokeWidth="1.75" strokeLinejoin="round" />
-      {pts.filter((_, i) => i % 3 === 0).map(([x, y], i) => (
-        <circle key={i} cx={x} cy={y} r="2.4" fill="white" stroke="hsl(var(--electric))" strokeWidth="1.4" />
-      ))}
+      {pts.map(([x, y], i) =>
+        i % Math.max(1, Math.ceil(pts.length / 5)) === 0 ? (
+          <circle key={i} cx={x} cy={y} r="2.4" fill="white" stroke="hsl(var(--electric))" strokeWidth="1.4" />
+        ) : null,
+      )}
     </svg>
   );
 }
 
-function Bars() {
+function Bars({ volume }: { volume: UsagePreviewData['volume'] }) {
   const [on, setOn] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => setOn(true), 120);
     return () => clearTimeout(t);
   }, []);
-  const max = Math.max(...TOKENS);
+  const values = volume.map((v) => v.tokens);
+  const max = Math.max(1, ...values);
+
   return (
-    <div className="flex h-28 items-end gap-[3px]" aria-hidden="true">
-      {TOKENS.map((v, i) => (
+    <div className="flex h-28 items-end gap-[3px]">
+      {volume.map((v, i) => (
         <span
-          key={i}
+          key={v.key}
+          title={`${shortDate(v.key)} · ${formatNumber(v.tokens)} token`}
           className={cn(
             'flex-1 rounded-t-[1px] bg-electric/80 transition-[height] duration-700 ease-out',
-            i === TOKENS.length - 1 && 'bg-electric',
+            i === volume.length - 1 && 'bg-electric',
           )}
-          style={{ height: on ? `${(v / max) * 100}%` : '2%', transitionDelay: `${i * 22}ms` }}
+          style={{
+            height: on ? `${Math.max(v.tokens > 0 ? 3 : 1, (v.tokens / max) * 100)}%` : '2%',
+            transitionDelay: `${i * 22}ms`,
+          }}
         />
       ))}
     </div>
   );
 }
 
-export function UsagePreview() {
-  const totalVolume = VOLUME.reduce((a, b) => a + b, 0);
-  const totalTokens = TOKENS.reduce((a, b) => a + b, 0) * 1000;
+export function UsagePreview({ data }: { data: UsagePreviewData }) {
+  const hasData = data.requests > 0;
+  const dates = data.volume.map((v) => shortDate(v.key));
 
   return (
     <div className="overflow-hidden rounded-sm border border-hairline bg-card">
       <div className="flex items-center justify-between border-b border-hairline px-4 py-2.5">
         <span className="tech-label">usage.overview</span>
         <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-          <span className="h-1.5 w-1.5 rounded-full bg-warning" />
-          sample data
+          <span
+            className={cn('h-1.5 w-1.5 rounded-full', hasData ? 'bg-electric' : 'bg-muted-foreground')}
+          />
+          {hasData ? 'data live' : 'belum ada data'}
         </span>
       </div>
 
       <div className="grid gap-px bg-hairline sm:grid-cols-3">
         {[
-          { k: 'Requests', v: totalVolume.toLocaleString('en-US'), s: '14 hari' },
-          { k: 'Tokens', v: `${(totalTokens / 1_000_000).toFixed(1)}M`, s: 'input + output' },
-          { k: 'Est. cost', v: 'Rp3.418.000', s: 'setelah markup' },
+          { k: 'Requests', v: formatNumber(data.requests), s: `${data.days} hari` },
+          { k: 'Tokens', v: formatNumber(data.tokens), s: 'input + output' },
+          { k: 'Cost', v: formatIdr(data.cost), s: 'setelah markup' },
         ].map((m) => (
           <div key={m.k} className="bg-card px-4 py-4">
             <p className="tech-label">{m.k}</p>
@@ -115,31 +130,37 @@ export function UsagePreview() {
             <span className="tech-label">request volume</span>
             <span className="font-mono text-[10px] text-muted-foreground">per hari</span>
           </div>
-          <LineChart />
+          <LineChart volume={data.volume} />
           <div className="mt-1 flex justify-between font-mono text-[9px] text-muted-foreground">
-            {DAYS.filter((_, i) => i % 3 === 0).map((d) => (
-              <span key={d}>{d}</span>
-            ))}
+            {dates
+              .filter((_, i) => i % 3 === 0 || i === dates.length - 1)
+              .map((d, i) => (
+                <span key={`${d}-${i}`}>{d}</span>
+              ))}
           </div>
         </div>
 
         <div className="bg-card p-4">
           <div className="mb-3 flex items-center justify-between">
-            <span className="tech-label">provider distribution</span>
+            <span className="tech-label">distribusi model</span>
           </div>
-          <ul className="space-y-2.5">
-            {PROVIDERS.map((p) => (
-              <li key={p.name}>
-                <div className="flex items-center justify-between font-mono text-[11px]">
-                  <span className="text-foreground">{p.name}</span>
-                  <span className="tabular text-muted-foreground">{p.share}%</span>
-                </div>
-                <div className="mt-1 h-[3px] w-full bg-muted">
-                  <div className="h-full bg-electric" style={{ width: `${p.share}%` }} />
-                </div>
-              </li>
-            ))}
-          </ul>
+          {data.byModel.length > 0 ? (
+            <ul className="space-y-2.5">
+              {data.byModel.map((p) => (
+                <li key={p.name}>
+                  <div className="flex items-center justify-between font-mono text-[11px]">
+                    <span className="text-foreground">{p.name}</span>
+                    <span className="tabular text-muted-foreground">{p.share}%</span>
+                  </div>
+                  <div className="mt-1 h-[3px] w-full bg-muted">
+                    <div className="h-full bg-electric" style={{ width: `${p.share}%` }} />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-xs text-muted-foreground">Belum ada request.</p>
+          )}
         </div>
       </div>
 
@@ -147,34 +168,42 @@ export function UsagePreview() {
         <div className="bg-card p-4">
           <span className="tech-label">response status</span>
           <ul className="mt-3 space-y-2">
-            {STATUS.map((s) => (
-              <li key={s.label} className="flex items-center justify-between font-mono text-[11px]">
-                <span className="flex items-center gap-2">
-                  <span
-                    className={cn(
-                      'h-1.5 w-1.5 rounded-full',
-                      s.tone === 'ok' ? 'bg-success' : s.tone === 'warn' ? 'bg-warning' : 'bg-destructive',
-                    )}
-                  />
-                  <span className="text-foreground">{s.label}</span>
-                </span>
-                <span className="tabular text-muted-foreground">{s.count}</span>
-              </li>
-            ))}
+            {data.status.length > 0 ? (
+              data.status.map((s) => (
+                <li key={s.label} className="flex items-center justify-between font-mono text-[11px]">
+                  <span className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        'h-1.5 w-1.5 rounded-full',
+                        STATUS_TONE[s.label] === 'ok'
+                          ? 'bg-success'
+                          : STATUS_TONE[s.label] === 'warn'
+                            ? 'bg-warning'
+                            : 'bg-destructive',
+                      )}
+                    />
+                    <span className="text-foreground">{s.label}</span>
+                  </span>
+                  <span className="tabular text-muted-foreground">{formatNumber(s.count)}</span>
+                </li>
+              ))
+            ) : (
+              <li className="font-mono text-[11px] text-muted-foreground">Belum ada request.</li>
+            )}
           </ul>
         </div>
         <div className="bg-card p-4">
           <div className="mb-3 flex items-center justify-between">
             <span className="tech-label">token consumption</span>
-            <span className="font-mono text-[10px] text-muted-foreground">ribuan / hari</span>
+            <span className="font-mono text-[10px] text-muted-foreground">request / hari</span>
           </div>
-          <Bars />
+          <Bars volume={data.volume} />
         </div>
       </div>
 
       <div className="border-t border-hairline px-4 py-3">
         <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-          contoh tampilan dashboard — metrik ilustratif, bukan data akun nyata
+          agregat platform {data.days} hari terakhir — tanpa data akun individual
         </p>
       </div>
     </div>

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { ArrowRight, ArrowUpRight } from 'lucide-react';
+import { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { formatIdr, formatNumber } from '@/lib/utils';
 import { SiteNav } from '@/components/landing/site-nav';
@@ -139,7 +140,7 @@ function Glyph({ kind }: { kind: GlyphKind }) {
 }
 
 export default async function Home() {
-  const [modelRows, planRows] = await Promise.all([
+  const [modelRows, planRows, liveStats, liveByModel, liveStatus, liveDaily] = await Promise.all([
     db.model.findMany({
       where: { isActive: true },
       orderBy: { priceInPer1MIdr: 'asc' },
@@ -157,7 +158,52 @@ export default async function Home() {
       orderBy: { monthlyPriceIdr: 'asc' },
       include: { _count: { select: { models: true } } },
     }),
+    // Observability section: agregat platform-wide (bukan per user), 14 hari terakhir.
+    db.$queryRaw<
+      Array<{ requests: bigint; promptTokens: bigint | null; completionTokens: bigint | null; cost: bigint | null }>
+    >(Prisma.sql`
+      SELECT count(*) AS requests,
+             COALESCE(sum("promptTokens"), 0) AS "promptTokens",
+             COALESCE(sum("completionTokens"), 0) AS "completionTokens",
+             COALESCE(sum("costIdr"), 0) AS cost
+      FROM "UsageLog"
+      WHERE "createdAt" >= now() - interval '14 days'
+        AND status <> 'REJECTED'::"UsageStatus"
+    `),
+    db.$queryRaw<Array<{ modelId: string | null; requests: bigint }>>(Prisma.sql`
+      SELECT "modelId", count(*) AS requests
+      FROM "UsageLog"
+      WHERE "createdAt" >= now() - interval '14 days'
+        AND status <> 'REJECTED'::"UsageStatus"
+      GROUP BY 1
+      ORDER BY 2 DESC
+    `),
+    db.$queryRaw<Array<{ status: string; requests: bigint }>>(Prisma.sql`
+      SELECT status::text AS status, count(*) AS requests
+      FROM "UsageLog"
+      WHERE "createdAt" >= now() - interval '14 days'
+      GROUP BY 1
+    `),
+    // Volume request + token per hari (14 hari) untuk chart.
+    db.$queryRaw<Array<{ key: string; requests: bigint; tokens: bigint | null }>>(Prisma.sql`
+      SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS key,
+             count(*) AS requests,
+             COALESCE(sum("totalTokens"), 0) AS tokens
+      FROM "UsageLog"
+      WHERE "createdAt" >= now() - interval '14 days'
+        AND status <> 'REJECTED'::"UsageStatus"
+      GROUP BY 1
+      ORDER BY 1 ASC
+    `),
   ]);
+
+  // Nama model publik untuk distribusi (jangan pernah expose internalName/provider).
+  const [liveTotals] = liveStats;
+  const byModelNames = await db.model.findMany({
+    where: { id: { in: liveByModel.map((r) => r.modelId).filter((v): v is string => Boolean(v)) } },
+    select: { id: true, publicName: true },
+  });
+  const modelNameById = Object.fromEntries(byModelNames.map((m) => [m.id, m.publicName]));
 
   const models: CatalogModel[] = modelRows.map((m) => ({
     publicName: m.publicName,
@@ -167,6 +213,31 @@ export default async function Home() {
     priceOutPer1MIdr: m.priceOutPer1MIdr,
     capabilities: (m.capabilities as Caps) ?? {},
   }));
+
+  // Data Observability landing: agregat platform-wide, hanya angka publik
+  // (request/token/biaya/status). Tidak ada userId, key, atau provider internal.
+  const byModelShare = liveByModel.slice(0, 5);
+  const totalModelReq = byModelShare.reduce((a, b) => a + Number(b.requests), 0);
+  const usagePreviewData = {
+    days: 14,
+    requests: Number(liveTotals?.requests ?? 0),
+    tokens:
+      Number(liveTotals?.promptTokens ?? 0) + Number(liveTotals?.completionTokens ?? 0),
+    cost: Number(liveTotals?.cost ?? 0),
+    volume: Array.from({ length: 14 }, (_, i) => {
+      const d = new Date(Date.now() - (13 - i) * 86_400_000).toISOString().slice(0, 10);
+      const found = liveDaily.find((r) => r.key === d);
+      return { key: d, requests: Number(found?.requests ?? 0), tokens: Number(found?.tokens ?? 0) };
+    }),
+    byModel: byModelShare.map((r) => ({
+      name: modelNameById[r.modelId ?? ''] ?? 'lainnya',
+      share: totalModelReq > 0 ? Math.round((Number(r.requests) / totalModelReq) * 100) : 0,
+    })),
+    status: liveStatus.map((r) => ({
+      label: r.status,
+      count: Number(r.requests),
+    })),
+  };
 
   return (
     <div className="min-h-screen">
@@ -366,11 +437,11 @@ export default async function Home() {
               Setiap token, terhitung dan terlihat.
             </h2>
             <p className="reading mt-4">
-              Pantau volume request, konsumsi token, estimasi biaya, dan distribusi provider. Semua metrik di bawah ini
-              contoh ilustratif.
+              Pantau volume request, konsumsi token, estimasi biaya, dan distribusi model. Angka di bawah adalah data
+              pemakaian platform 14 hari terakhir — diperbarui setiap halaman dimuat.
             </p>
           </div>
-          <UsagePreview />
+          <UsagePreview data={usagePreviewData} />
         </div>
       </section>
 
