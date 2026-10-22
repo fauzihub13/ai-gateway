@@ -267,12 +267,45 @@ curl -X POST https://app.mpruy.ai/api/keys \
 
 | Method | Path | Query/Body | Response |
 |---|---|---|---|
-| GET | `/api/billing/balance` | — | `{ balance, currency: "IDR" }` |
-| GET | `/api/billing/usage` | `?from&to&groupBy=day|model|key` | `{ items: [...] }` |
-| GET | `/api/billing/transactions` | `?page&limit` | `{ items, total }` |
-| POST | `/api/billing/topup` | `{ amountIdr }` | `{ redirectUrl, orderId }` |
+| GET | `/api/billing/usage` | `?days=30&groupBy=day\|model\|key` | `{ balance, currency: "IDR", totals, items }` |
+| GET | `/api/billing/transactions` | `?page&limit` | `{ items, total, page, limit }` |
+| POST | `/api/billing/topup` | `{ amountIdr }` | `{ redirectUrl, orderId }` — 400 `midtrans_disabled` bila `NEXT_PUBLIC_MIDTRANS_ENABLED=false` |
+| POST | `/api/billing/topup/qris` | `{ amountIdr }` | `{ orderId, amountIdr, uniqueCode, payAmountIdr, qrisPayload, qrDataUrl, expiresAt }` |
+| GET | `/api/billing/topup/qris/:orderId` | — | QR + detail transaksi PENDING (untuk ditampilkan ulang) |
+| GET | `/api/billing/plans` | — | `{ balance, currency, current, plans[] }` |
+| POST | `/api/billing/plans/purchase` | `{ plan }` | `{ ok, plan, days, priceIdr, balance, planExpiresAt }` |
 | POST | `/api/billing/webhook` | (Midtrans) | `200` |
-| GET | `/api/billing/invoices/:id` | — | PDF/JSON invoice |
+
+> `balance` tidak punya endpoint sendiri — selalu dikirim bersama `/api/billing/usage` dan `/api/auth/me`.
+
+**Beli plan dari saldo:**
+
+```bash
+curl -X POST https://app.mpruy.ai/api/billing/plans/purchase \
+  -H "Content-Type: application/json" -H "X-CSRF-Token: <tok>" -b cookies.txt \
+  -d '{ "plan": "pro" }'
+```
+
+```json
+{
+  "ok": true,
+  "plan": { "name": "pro", "displayName": "Pro", "monthlyPriceIdr": 100000, "rpmLimit": 300, "monthlyTokenLimit": 100000000, "markup": 1.2, "models": ["mimo"] },
+  "days": 30,
+  "priceIdr": 100000,
+  "balance": 50000,
+  "planExpiresAt": "2026-11-21T10:00:00.000Z"
+}
+```
+
+| Kondisi | HTTP | `error.code` |
+|---|---|---|
+| Plan tidak ada / nonaktif | 404 | `plan_not_found` |
+| Plan gratis (harga 0) | 400 | `plan_not_purchasable` |
+| Plan sama masih aktif | 400 | `plan_already_active` |
+| Saldo < harga plan | 402 | `insufficient_balance` |
+| Body invalid | 400 | `invalid_request_error` |
+
+Aturan: sekali bayar = **30 hari**, sisa masa aktif plan lama **hangus** (periode di-reset dari sekarang). Tidak ada recurring — lihat [10-BILLING-USAGE.md](./10-BILLING-USAGE.md).
 
 ### 6.4 Models (user view)
 
@@ -300,8 +333,8 @@ curl -X POST https://app.mpruy.ai/api/keys \
 | GET | `/api/admin/users/:id` | detail user (keys, usage, txns) |
 | PATCH | `/api/admin/users/:id` | ubah plan/status/balance (audit) |
 | POST | `/api/admin/users/:id/balance` | adjust saldo (+/−) dengan alasan |
-| POST | `/api/admin/users/:id/suspend` | suspend |
-| POST | `/api/admin/users/:id/unsuspend` | unsuspend |
+| POST | `/api/admin/users/:id/plan` | beri/ganti plan **tanpa** potong saldo (`{ plan, days?, note? }`) |
+| POST | `/api/admin/users/:id/status` | `{ action: "suspend" \| "unsuspend" \| "verify" }` |
 | GET | `/api/admin/models` | list model (termasuk internalName) |
 | POST | `/api/admin/models` | buat model |
 | PATCH | `/api/admin/models/:id` | ubah harga/capability/aktif |
@@ -327,7 +360,62 @@ curl -X POST https://app.mpruy.ai/api/admin/users/usr_1/balance \
   -d '{ "deltaIdr": 50000, "reason": "Manual top-up via transfer bank", "note": "INV-2024-001" }'
 ```
 
+Contoh memberi plan tanpa potong saldo:
+
+```bash
+curl -X POST https://app.mpruy.ai/api/admin/users/usr_1/plan \
+  -H "Content-Type: application/json" -b admin_cookies.txt \
+  -H "X-CSRF-Token: <tok>" \
+  -d '{ "plan": "pro", "days": 30, "note": "Kompensasi downtime 2 jam" }'
+```
+
+```json
+{
+  "ok": true,
+  "plan": "pro",
+  "planExpiresAt": "2026-11-21T10:00:00.000Z"
+}
+```
+
+| Field | Aturan |
+|---|---|
+| `plan` | nama plan yang ada (`/api/admin/plans`) |
+| `days` | 1..3650. `0` = tanpa expiry (hanya bermakna untuk plan gratis) |
+| `note` | opsional, disimpan di `AdminAuditLog.metadata` |
+
+Aksi ini **tidak** memotong saldo dan **tidak** membuat `Transaction`. Riwayatnya tercatat di `Subscription` (`source = "ADMIN"`) + `AdminAuditLog` (`user.plan.grant`). Pembelian normal oleh user tetap memotong saldo lewat `/api/billing/plans/purchase`.
+
 Detail admin → [16-ADMIN-PANEL.md](./16-ADMIN-PANEL.md).
+
+---
+
+## 7b. Expiry plan: kendali manual admin
+
+**Tidak ada endpoint cron dan tidak ada auto-downgrade.** Plan user hanya berubah bila:
+
+1. User membeli plan sendiri lewat `POST /api/billing/plans/purchase`, atau
+2. Admin mengubahnya lewat `POST /api/admin/users/:id/plan`.
+
+`User.planExpiresAt` hanya **penanda** kapan masa aktif habis. Lewat tanggal, plan **tetap aktif** dan hanya ditandai `expired: true` di `GET /api/billing/plans` (`current.expired`) serta di panel admin. Keputusan menurunkan user ada di tangan admin (kompensasi, churn, atau perpanjangan manual).
+
+```json
+{
+  "current": {
+    "planName": "pro",
+    "expiresAt": "2026-11-21T10:00:00.000Z",
+    "daysLeft": 0,
+    "expired": true
+  }
+}
+```
+
+| Kondisi | Perilaku |
+|---|---|
+| `planExpiresAt = null` | Plan gratis / tanpa batas waktu; `expired` selalu `false` |
+| `planExpiresAt > now` | `expired = false`, `daysLeft > 0` |
+| `planExpiresAt <= now` | `expired = true`, `daysLeft = 0`, **akses tidak berubah** sampai admin menurunkan |
+
+Operasional: admin memantau daftar user dengan `planExpiresAt` lewat `GET /api/admin/users` (field `planExpiresAt` dikembalikan) dan menurunkan yang sudah lewat lewat `POST /api/admin/users/:id/plan` dengan plan `free` / `days: 0`. Lihat [16-ADMIN-PANEL.md](./16-ADMIN-PANEL.md).
 
 ---
 

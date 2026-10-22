@@ -42,6 +42,8 @@ export async function POST(req: Request) {
     assertCsrf(req);
     const data = CreateSchema.parse(await req.json());
 
+    // Batas key mengikuti plan aktif apa adanya. Plan yang lewat masa aktif
+    // tidak diturunkan otomatis — admin yang menurunkannya manual.
     const user = await db.user.findUniqueOrThrow({
       where: { id: s.sub },
       include: { plan: true, apiKeys: true },

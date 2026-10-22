@@ -56,6 +56,7 @@ enum LedgerReason {
   USAGE
   REFUND
   ADJUSTMENT
+  PLAN
 }
 
 enum TokenType {
@@ -74,21 +75,28 @@ model User {
   sessionVersion  Int        @default(0)
   planId          String
   plan            Plan       @relation(fields: [planId], references: [id])
+  // Penanda masa aktif plan berbayar; null = plan gratis (tanpa expiry).
+  // Lewat tanggal TIDAK mengubah plan otomatis — hanya ditandai `expired`
+  // di dashboard admin. Penurunan plan dilakukan manual oleh admin.
+  planExpiresAt   DateTime?  @db.Timestamptz
   emailVerifiedAt DateTime?  @db.Timestamptz
   lastLoginAt     DateTime?  @db.Timestamptz
   createdAt       DateTime   @default(now()) @db.Timestamptz
   updatedAt       DateTime   @updatedAt @db.Timestamptz
   deletedAt       DateTime?  @db.Timestamptz
 
-  apiKeys      ApiKey[]
-  usageLogs    UsageLog[]
-  transactions Transaction[]
-  ledger       BalanceLedger[]
-  tokens       VerificationToken[]
-  audits       AdminAuditLog[]
+  apiKeys       ApiKey[]
+  usageLogs     UsageLog[]
+  transactions  Transaction[]
+  ledger        BalanceLedger[]
+  tokens        VerificationToken[]
+  audits        AdminAuditLog[]
+  subscriptions Subscription[]
 
   @@index([status])
   @@index([role])
+  // Dipakai dashboard admin untuk menemukan plan yang lewat masa aktif.
+  @@index([planExpiresAt])
 }
 
 model ApiKey {
@@ -151,8 +159,9 @@ model Plan {
   isActive          Boolean  @default(true)
   createdAt         DateTime @default(now()) @db.Timestamptz
 
-  users  User[]
-  models PlanModel[]
+  users         User[]
+  models        PlanModel[]
+  subscriptions Subscription[]
 }
 
 model PlanModel {
@@ -271,4 +280,28 @@ model AppSetting {
   key       String   @id
   value     Json
   updatedAt DateTime @updatedAt @db.Timestamptz
+}
+
+/// Riwayat pembelian/upgrade plan berbayar. `User.planId` tetap satu sumber
+/// kebenaran plan aktif; baris ini mencatat siapa membeli plan apa, kapan,
+/// dan berapa yang dibayar (potong saldo). Masa aktif dicek lewat
+/// `User.planExpiresAt` (murni penanda; penurunan plan manual oleh admin),
+/// bukan lewat tabel ini.
+model Subscription {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId     String
+  plan       Plan     @relation(fields: [planId], references: [id])
+  // Harga plan yang dibayar saat transaksi (snapshot; harga plan bisa berubah).
+  priceIdr   Int
+  days       Int      @default(30)
+  // Saldo terpotong atau admin berikan tanpa potong saldo. BALANCE | ADMIN
+  source     String   @default("BALANCE")
+  startsAt   DateTime @default(now()) @db.Timestamptz
+  expiresAt  DateTime @db.Timestamptz
+  createdAt  DateTime @default(now()) @db.Timestamptz
+
+  @@index([userId, createdAt])
+  @@index([planId])
 }

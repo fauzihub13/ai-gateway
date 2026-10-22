@@ -32,6 +32,8 @@ export async function POST(req: Request) {
     assertCsrf(req);
     const body = Schema.parse(await req.json());
 
+    // Akses model mengikuti plan aktif apa adanya. Plan yang lewat masa aktif
+    // tidak diturunkan otomatis — admin yang menurunkannya manual.
     const user = await db.user.findUniqueOrThrow({ where: { id: s.sub }, include: { plan: true } });
 
     const model = await db.model.findUnique({ where: { publicName: body.model } });

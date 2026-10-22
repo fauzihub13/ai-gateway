@@ -84,7 +84,7 @@ Reset (dev only): `npx prisma migrate reset`.
 5. Region: pilih terdekat pengguna (mis. Singapore `sin1`) — juga dekat ke VPS 9Router untuk latensi.
 6. **Route Handler `/v1/chat/completions`**: pastikan Node runtime & `maxDuration` sesuai plan. Untuk stream panjang, pertimbangkan Vercel Pro (durasi lebih panjang) atau proxy di VPS bila perlu.
 7. Custom domain: `api.mpruy.ai` (API) + `app.mpruy.ai` (dashboard), atau satu domain.
-8. Aktifkan Vercel Cron (`vercel.json`) untuk reconcile & cleanup.
+8. (Opsional) Aktifkan Vercel Cron (`vercel.json`) untuk reconcile & cleanup transaksi. **Expiry plan tidak memakai cron** — penurunan plan dilakukan manual oleh admin dari dashboard (lihat [05-API-CONTRACT.md §7b](./05-API-CONTRACT.md)).
 
 ```json
 {
@@ -269,7 +269,7 @@ Uji restore berkala (quarterly) agar tidak sekadar ada backup.
 [ ] Gateway key benar & tidak bocor
 [ ] Cloudflare proxied + SSL strict
 [ ] Domain custom aktif (api + app)
-[ ] Cron terdaftar & CRON_SECRET diset
+[ ] (Opsional) Cron reconcile/cleanup terdaftar & CRON_SECRET diset — **tidak ada** cron untuk expiry plan
 [ ] Sentry DSN aktif
 [ ] Backup harian aktif
 [ ] Rollback plan siap

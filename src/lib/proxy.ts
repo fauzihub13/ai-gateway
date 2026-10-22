@@ -32,6 +32,9 @@ export async function authenticateApiKey(req: Request): Promise<AuthContext> {
   if (key.user.status === 'SUSPENDED') throw new UnauthorizedError('account_suspended', 'Account suspended.');
   if (key.user.status !== 'ACTIVE') throw new UnauthorizedError();
 
+  // Tidak ada auto-downgrade di jalur request: plan hanya berubah bila admin
+  // menurunkannya manual dari dashboard. `planExpiresAt` yang lewat tanggal
+  // tidak mengubah akses sampai admin mengambil tindakan.
   void db.apiKey
     .update({ where: { id: key.id }, data: { lastUsedAt: new Date() } })
     .catch(() => undefined);

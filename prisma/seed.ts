@@ -7,6 +7,9 @@ async function main() {
   const plans = [
     // Plan gratis adalah tier default untuk user baru (lihat src/lib/plans.ts).
     { name: 'free', displayName: 'Free', markup: 1, rpmLimit: 100, monthlyTokenLimit: 20_000_000, monthlyPriceIdr: 0 },
+    // Plan berbayar: dibeli user dari saldo (30 hari), bukan tagihan berulang.
+    // Harga di sini contoh; ubah lewat /admin/plans.
+    { name: 'pro', displayName: 'Pro', markup: 1.2, rpmLimit: 300, monthlyTokenLimit: 100_000_000, monthlyPriceIdr: 100_000 },
   ];
   for (const p of plans) {
     await db.plan.upsert({ where: { name: p.name }, create: p, update: p });
@@ -20,6 +23,7 @@ async function main() {
   }
 
   const free = await db.plan.findUniqueOrThrow({ where: { name: 'free' } });
+  const pro = await db.plan.findUniqueOrThrow({ where: { name: 'pro' } });
   const allModels = await db.model.findMany();
 
   const link = async (planId: string, subset?: string[]) => {
@@ -32,8 +36,10 @@ async function main() {
       });
     }
   };
-  // Hanya ada satu plan: free, dengan akses ke seluruh model yang di-seed.
+  // Free boleh akses semua model yang di-seed. Pro juga semua model, tapi
+  // markup lebih rendah (harga jual per token lebih murah).
   await link(free.id);
+  await link(pro.id);
 
   const adminEmail = process.env.ADMIN_EMAIL ?? 'admin@mpruy.ai';
   const adminPassword = process.env.ADMIN_PASSWORD ?? 'ChangeMe!123';

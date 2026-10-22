@@ -24,7 +24,7 @@ User 1───* ApiKey
 User 1───1 Balance
 User 1───* UsageLog
 User 1───* Transaction
-User 1───1 Subscription (opsional; plan aktif)
+User 1───* Subscription (riwayat pembelian plan; plan aktif ada di User.planId)
 User *───1 Plan
 ApiKey *─1 Plan (via User, tapi ada key-level override)
 Plan 1──* PlanModel *──1 Model
@@ -40,7 +40,7 @@ Session (opsional, bila pakai server session; default JWT stateless)
 ┌────────┐     ┌────────┐     ┌─────────┐
 │  User  │────<│ ApiKey │     │  Plan   │
 │        │     └────────┘     └────┬────┘
-│        │────<┌──────────┐         │ * 
+│        │────<┌──────────┐         │ *
 │        │     │ UsageLog │         │
 │        │     └──────────┘    ┌────▼──────┐
 │        │────<┌────────────┐  │ PlanModel │
@@ -49,13 +49,20 @@ Session (opsional, bila pakai server session; default JWT stateless)
 │        │           │              │
 │        │────<┌─────▼────────┐ ┌───▼────┐
 │        │     │BalanceLedger │ │ Model  │
-└────────┘     └──────────────┘ └───┬────┘
-                                     │ *
-                                     │
-                                ┌────▼─────┐
-                                │ UsageLog │
-                                └──────────┘
+│        │────<┌──────────────┐ └───┬────┘
+│        │     │ Subscription │     │ *
+│        │     └──────┬───────┘     │
+│        │            │        ┌────▼─────┐
+│        │            └───────<│ UsageLog │
+└────────┘                     └──────────┘
+     │ User.planId (plan AKTIF) ──> Plan
+     └ User.planExpiresAt = masa aktif (NULL = gratis)
 ```
+
+Catatan: `Subscription` adalah **riwayat** pembelian plan (snapshot harga, sumber
+dana `BALANCE`/`ADMIN`). Plan yang benar-benar aktif tetap dibaca dari
+`User.planId` + `User.planExpiresAt`, bukan dari baris `Subscription` terakhir.
+Lihat [03-FLOW-LOGIC.md §1.5](./03-FLOW-LOGIC.md).
 
 ---
 
@@ -72,14 +79,23 @@ Session (opsional, bila pakai server session; default JWT stateless)
 | role | Role | not null, default `USER` | enum USER/ADMIN |
 | status | UserStatus | not null, default `PENDING_EMAIL` | enum |
 | balance | Int | not null, default 0 | Rupiah bulat |
-| planId | String | FK → Plan | plan aktif |
+| planId | String | FK → Plan | plan aktif (satu sumber kebenaran) |
+| planExpiresAt | DateTime? | | batas masa aktif plan berbayar; `NULL` = plan gratis tanpa expiry |
 | emailVerifiedAt | DateTime? | | |
 | lastLoginAt | DateTime? | | |
 | createdAt | DateTime | not null | |
 | updatedAt | DateTime | not null | |
 | deletedAt | DateTime? | | soft delete |
 
-Index: `email` (unique), `status`, `role`.
+Index: `email` (unique), `status`, `role`, `planExpiresAt` (dipakai dashboard admin untuk menandai plan yang lewat masa aktif).
+
+**Aturan bisnis `planExpiresAt`:**
+
+- Plan berbayar dibeli untuk 30 hari (`PLAN_PERIOD_DAYS`). Saat beli, `planExpiresAt = now() + 30 hari`.
+- Plan gratis (`free`) selalu `planExpiresAt = NULL` — tidak pernah kedaluwarsa.
+- Bila `planExpiresAt <= now()`, plan **tidak berubah otomatis**. Dashboard menandainya `expired: true` dan admin memutuskan kapan user diturunkan.
+- Penurunan plan **manual** oleh admin: `POST /api/admin/users/:id/plan` → `grantPlan()` (tanpa potong saldo, tercatat di `Subscription` + `AdminAuditLog`). **Tidak ada cron maupun auto-downgrade di jalur request.**
+- `User.planId` tetap satu-satunya sumber kebenaran plan aktif. Tabel `Subscription` hanya riwayat, **tidak** dipakai untuk mengecek validitas plan.
 
 ### 3.2 `ApiKey`
 
@@ -130,14 +146,22 @@ Index: `publicName` (unique), `isActive`.
 | Kolom | Tipe | Constraint | Catatan |
 |---|---|---|---|
 | id | String | PK | |
-| name | String | UNIQUE, not null | `free` (saat ini hanya satu plan bawaan) |
+| name | String | UNIQUE, not null | mis. `free`, `pro` |
 | displayName | String | not null | |
-| markup | Float | not null, default 1.5 | faktor harga jual |
+| markup | Float | not null, default 1.5 | faktor harga jual per token |
 | rpmLimit | Int | not null | request/menit |
 | monthlyTokenLimit | Int? | | null = unlimited |
-| monthlyPriceIdr | Int | not null, default 0 | biaya langganan (0 = pay-as-you-go) |
-| isActive | Boolean | not null, default true | |
+| monthlyPriceIdr | Int | not null, default 0 | **harga beli plan per 30 hari** (0 = gratis / tidak bisa dibeli) |
+| isActive | Boolean | not null, default true | plan non-aktif tidak muncul di katalog & tidak bisa dibeli |
 | createdAt | DateTime | not null | |
+
+**Aturan bisnis:**
+
+- `monthlyPriceIdr > 0` → plan berbayar, dibeli user dari **saldo** (`POST /api/billing/plans/purchase`). Tidak ada recurring/tagihan otomatis; satu pembelian = 30 hari.
+- `monthlyPriceIdr = 0` → plan gratis/default, tidak bisa dibeli (`plan_not_purchasable`).
+- Beli plan baru saat plan berbayar lain masih aktif → periode di-reset dari sekarang, sisa hari plan lama **hangus**.
+- Beli plan yang **sama** saat masih aktif → ditolak (`plan_already_active`) supaya user tidak membuang sisa hari tanpa sadar.
+- `markup` berbeda per plan → harga jual per token berbeda meski model sama. Lihat [08-MODEL-MAPPING.md](./08-MODEL-MAPPING.md).
 
 ### 3.5 `PlanModel` (join)
 
@@ -206,12 +230,39 @@ Index: `orderId` (unique), `(userId, status)`, `createdAt`.
 | userId | String | FK → User, index | |
 | deltaIdr | Int | not null | + top-up, − usage, + refund, ± adjust |
 | balanceAfter | Int | not null | saldo setelah operasi (audit) |
-| reason | LedgerReason | not null | TOPUP/USAGE/REFUND/ADJUSTMENT |
-| referenceId | String? | | UsageLog.id / Transaction.id |
+| reason | LedgerReason | not null | TOPUP/USAGE/REFUND/PLAN/ADJUSTMENT |
+| referenceId | String? | | UsageLog.id / Transaction.id / Subscription.id |
 | note | String? | | |
 | createdAt | DateTime | not null, index | |
 
-### 3.9 `VerificationToken`
+`reason = PLAN` dipakai saat user membeli plan berbayar dari saldo (`deltaIdr` negatif, `referenceId` = `Subscription.id`). Adjust/refund manual tetap memakai `ADJUSTMENT`/`REFUND`.
+
+### 3.9 `Subscription` (riwayat plan)
+
+Append-only. Satu baris = satu pembelian/pemberian plan.
+
+| Kolom | Tipe | Constraint | Catatan |
+|---|---|---|---|
+| id | String | PK, cuid | |
+| userId | String | FK → User, `onDelete: Cascade`, index | |
+| planId | String | FK → Plan, `onDelete: Restrict`, index | |
+| priceIdr | Int | not null | snapshot harga yang dibayar (harga plan bisa berubah) |
+| days | Int | not null, default 30 | panjang periode |
+| source | String | not null, default `BALANCE` | `BALANCE` (potong saldo) / `ADMIN` (gratis) |
+| startsAt | DateTime | not null, default now | |
+| expiresAt | DateTime | not null | `startsAt + days` |
+| createdAt | DateTime | not null | |
+
+Index: `(userId, createdAt)`, `planId`.
+
+**Aturan bisnis:**
+
+- `source = BALANCE` dibuat oleh `purchasePlan()` — satu transaksi DB: potong saldo (guard `balance >= price`) → catat `BalanceLedger(reason=PLAN)` → buat `Subscription` → set `User.planId` + `User.planExpiresAt`.
+- `source = ADMIN` dibuat oleh `grantPlan()` — tanpa potong saldo, dipakai untuk kompensasi/hadiah/migrasi manual. `priceIdr = 0`. Juga dicatat di `AdminAuditLog` (`action = user.plan.grant`).
+- `expiresAt` di tabel ini **tidak** dipakai untuk cek validitas; yang dipakai `User.planExpiresAt`. Tabel ini murni riwayat & dasar invoice/audit.
+- Tidak ada unique constraint anti-dobel di sini; proteksi dobel ada di transaksi (guard saldo) + aturan `plan_already_active`.
+
+### 3.10 `VerificationToken`
 
 | Kolom | Tipe | Constraint | Catatan |
 |---|---|---|---|
@@ -223,7 +274,7 @@ Index: `orderId` (unique), `(userId, status)`, `createdAt`.
 | usedAt | DateTime? | | |
 | createdAt | DateTime | not null | |
 
-### 3.10 `AdminAuditLog`
+### 3.11 `AdminAuditLog`
 
 | Kolom | Tipe | Constraint | Catatan |
 |---|---|---|---|
@@ -236,7 +287,7 @@ Index: `orderId` (unique), `(userId, status)`, `createdAt`.
 | ip | String? | | |
 | createdAt | DateTime | not null, index | |
 
-### 3.11 `AppSetting` (key-value config)
+### 3.12 `AppSetting` (key-value config)
 
 | Kolom | Tipe | Constraint |
 |---|---|---|

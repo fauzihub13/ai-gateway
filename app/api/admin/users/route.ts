@@ -26,7 +26,8 @@ export async function GET(req: Request) {
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, email: true, name: true, role: true, status: true, balance: true,
-        createdAt: true, plan: { select: { name: true } },
+        createdAt: true, planExpiresAt: true,
+        plan: { select: { name: true } },
       },
     });
 

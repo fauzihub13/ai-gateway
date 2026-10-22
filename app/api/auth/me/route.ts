@@ -18,6 +18,7 @@ export async function GET(req: Request) {
       {
         user: { id: user.id, email: user.email, name: user.name, role: user.role, status: user.status },
         plan: user.plan.name,
+        planExpiresAt: user.planExpiresAt?.toISOString() ?? null,
         balance: user.balance,
       },
       200,

@@ -83,6 +83,40 @@ Detail → [11-PAYMENT-GATEWAY.md](./11-PAYMENT-GATEWAY.md).
 
 `UsageLog.status`: `completed`, `partial`, `error`, `rejected` (rejected = ditolak sebelum ke upstream).
 
+### 1.5 Subscription (plan berbayar) lifecycle
+
+Plan berbayar **dibeli dari saldo**, bukan lewat payment gateway. Satu pembelian = satu periode 30 hari.
+
+```
+   ┌──────────────┐  beli plan (saldo cukup)   ┌────────────────────┐
+   │ plan gratis  │───────────────────────────▶│ plan berbayar      │
+   │ (planExpiresAt = null)                    │ planExpiresAt=+30d │
+   └──────────────┘                            └─────────┬──────────┘
+          ▲                                              │
+          │  admin turunkan manual                       │ tanggal lewat
+          │  (POST /api/admin/users/:id/plan)            │ (plan TETAP aktif,
+          │                                              │  hanya ditandai
+          └──────────────────────────────────────────────┘  `expired: true`)
+```
+
+| Keadaan | `User.planId` | `User.planExpiresAt` | Efek |
+|---|---|---|---|
+| Plan gratis | plan default (`free`) | `null` | tanpa expiry |
+| Plan berbayar aktif | plan berbayar | tanggal > sekarang | akses & limit plan berbayar |
+| Plan berbayar lewat tanggal | plan berbayar (**tidak berubah**) | tanggal ≤ sekarang | akses **tetap** seperti plan berbayar; `current.expired = true` di dashboard & panel admin |
+| Setelah admin menurunkan | plan default | `null` | kembali ke limit gratis |
+
+**Tidak ada auto-downgrade.** Plan hanya berubah karena (a) user membeli plan, atau (b) admin
+mengubahnya manual. Lewat `planExpiresAt` tidak mengubah `User.planId`; itu hanya penanda agar
+admin tahu siapa yang perlu diturunkan/diperpanjang. Tidak ada cron expiry.
+
+**Penting:** `User.planId` adalah satu-satunya sumber kebenaran plan aktif. Tabel `Subscription`
+hanya **riwayat** pembelian (siapa, plan apa, harga berapa, kapan berlaku). Validitas ditentukan
+`User.planExpiresAt`, bukan baris `Subscription`.
+
+Detail pembelian & perhitungan → [10-BILLING-USAGE.md](./10-BILLING-USAGE.md),
+endpoint → [05-API-CONTRACT.md](./05-API-CONTRACT.md), admin grant → [16-ADMIN-PANEL.md](./16-ADMIN-PANEL.md).
+
 ---
 
 ## 2. Alur registrasi

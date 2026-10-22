@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatIdr } from '@/lib/utils';
 import { apiFetch } from '@/lib/client';
 import { MIDTRANS_ENABLED, TOPUP_MAX_IDR, TOPUP_MIN_IDR, TOPUP_STEP_IDR } from '@/lib/topup';
+import { PlanCard } from './plan-card';
 
 interface Trx {
   id: string;
@@ -139,6 +140,9 @@ export default function BillingPage() {
       <div className="grid gap-4 sm:grid-cols-2">
         <StatCard label="Saldo saat ini" value={formatIdr(balance)} icon={Wallet} accent="primary" />
       </div>
+
+      {/* Beli/upgrade plan memakai saldo — top-up dulu, lalu potong saldo di sini. */}
+      <PlanCard onPurchased={(b) => setBalance(b)} />
 
       <Card className="mt-6">
         <CardHeader>

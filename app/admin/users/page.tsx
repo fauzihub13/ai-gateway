@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Copy, KeyRound, Search, Wallet } from 'lucide-react';
+import { Copy, Crown, KeyRound, Loader2, Search, Wallet } from 'lucide-react';
 import { PageHeader } from '@/components/stat-card';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -17,6 +17,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { formatIdr } from '@/lib/utils';
 
 interface UserRow {
@@ -26,7 +27,15 @@ interface UserRow {
   role: string;
   status: string;
   balance: number;
+  planExpiresAt: string | null;
   plan: { name: string };
+}
+
+interface PlanOption {
+  name: string;
+  displayName: string;
+  monthlyPriceIdr: number;
+  isActive: boolean;
 }
 
 function getCookie(name: string): string {
@@ -41,6 +50,14 @@ export default function AdminUsersPage() {
   const [delta, setDelta] = useState(10000);
   const [reason, setReason] = useState('Manual adjustment');
   const [rawKey, setRawKey] = useState('');
+  // Ganti plan manual: tanpa potong saldo (kompensasi/hadiah/migrasi).
+  const [planTarget, setPlanTarget] = useState<UserRow | null>(null);
+  const [plans, setPlans] = useState<PlanOption[]>([]);
+  const [planName, setPlanName] = useState('');
+  const [planDays, setPlanDays] = useState(30);
+  const [planNote, setPlanNote] = useState('');
+  const [planSaving, setPlanSaving] = useState(false);
+  const [planError, setPlanError] = useState('');
 
   function load() {
     fetch(`/api/admin/users?q=${encodeURIComponent(q)}`)
@@ -51,6 +68,44 @@ export default function AdminUsersPage() {
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(load, []);
+
+  // Daftar plan hanya perlu sekali; dipakai untuk dropdown ganti plan.
+  useEffect(() => {
+    fetch('/api/admin/plans')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setPlans(d.plans ?? []))
+      .catch(() => undefined);
+  }, []);
+
+  function openPlanDialog(u: UserRow) {
+    setPlanTarget(u);
+    setPlanName(u.plan.name);
+    setPlanDays(30);
+    setPlanNote('');
+    setPlanError('');
+  }
+
+  async function savePlan() {
+    if (!planTarget) return;
+    setPlanSaving(true);
+    setPlanError('');
+    try {
+      const res = await fetch(`/api/admin/users/${planTarget.id}/plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCookie('csrf_token') },
+        body: JSON.stringify({ plan: planName, days: planDays, note: planNote || undefined }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setPlanError(data?.error?.message ?? 'Gagal mengganti plan.');
+        return;
+      }
+      setPlanTarget(null);
+      load();
+    } finally {
+      setPlanSaving(false);
+    }
+  }
 
   async function adjust() {
     const res = await fetch(`/api/admin/users/${adjustId}/balance`, {
@@ -133,6 +188,79 @@ export default function AdminUsersPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog
+        open={Boolean(planTarget)}
+        onOpenChange={(o) => {
+          if (!o && !planSaving) {
+            setPlanTarget(null);
+            setPlanError('');
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Ganti plan</DialogTitle>
+            <DialogDescription>
+              Plan diganti <span className="font-medium">tanpa memotong saldo</span>. Dipakai untuk
+              kompensasi, hadiah, atau migrasi manual. Pembelian normal oleh user tetap memotong saldo.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>User</Label>
+              <p className="text-sm text-muted-foreground">{planTarget?.email}</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Plan</Label>
+              <Select value={planName} onValueChange={setPlanName}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pilih plan" />
+                </SelectTrigger>
+                <SelectContent>
+                  {plans.map((p) => (
+                    <SelectItem key={p.name} value={p.name}>
+                      {p.displayName}
+                      {p.monthlyPriceIdr > 0 ? ` · ${formatIdr(p.monthlyPriceIdr)}` : ' · gratis'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Masa aktif (hari)</Label>
+              <Input
+                type="number"
+                min={0}
+                max={3650}
+                value={planDays}
+                onChange={(e) => setPlanDays(Number(e.target.value))}
+              />
+              <p className="text-xs text-muted-foreground">
+                0 = tanpa masa aktif (hanya untuk plan gratis). Plan berbayar otomatis diturunkan saat lewat.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Catatan (opsional)</Label>
+              <Input value={planNote} onChange={(e) => setPlanNote(e.target.value)} placeholder="Alasan pemberian plan" />
+            </div>
+          </div>
+          {planError && (
+            <div className="rounded-sm border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {planError}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPlanTarget(null)} disabled={planSaving}>
+              Batal
+            </Button>
+            <Button onClick={savePlan} disabled={planSaving || !planName}>
+              {planSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Crown className="h-4 w-4" />}
+              Simpan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={Boolean(rawKey)} onOpenChange={(o) => !o && setRawKey('')}>
         <DialogContent>
           <DialogHeader>
@@ -169,6 +297,11 @@ export default function AdminUsersPage() {
                 </TableCell>
                 <TableCell>
                   <Badge variant="secondary">{u.plan.name}</Badge>
+                  {u.planExpiresAt && (
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      s.d. {new Date(u.planExpiresAt).toLocaleDateString('id-ID')}
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell>
                   <Badge variant={u.status === 'ACTIVE' ? 'success' : u.status === 'SUSPENDED' ? 'destructive' : 'secondary'}>
@@ -178,6 +311,10 @@ export default function AdminUsersPage() {
                 <TableCell className="text-right">{formatIdr(u.balance)}</TableCell>
                 <TableCell>
                   <div className="flex justify-end gap-1">
+                    <Button variant="ghost" size="sm" onClick={() => openPlanDialog(u)}>
+                      <Crown className="h-4 w-4" />
+                      Plan
+                    </Button>
                     <Button variant="ghost" size="sm" onClick={() => setAdjustId(u.id)}>
                       Adjust
                     </Button>

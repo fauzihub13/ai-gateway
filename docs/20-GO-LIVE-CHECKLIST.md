@@ -44,8 +44,8 @@ Checklist pre-launch. Semua item wajib tercentang sebelum membuka akses publik.
 [ ] Backup DB harian aktif & diuji restore
 [ ] Health endpoints berfungsi (/api/health, /db, /redis, /upstream)
 [ ] Uptime monitor aktif
-[ ] Cron terdaftar (reconcile transaksi/saldo, cleanup, sync model)
-[ ] CRON_SECRET diset & diverifikasi
+[ ] (Opsional) Cron reconcile/cleanup terdaftar & CRON_SECRET diset — **tidak ada** cron untuk expiry plan
+[ ] Prosedur rutin admin: cek user dengan `planExpiresAt` lewat, lalu turunkan/perpanjang manual
 [ ] Settle queue & retry berfungsi (uji kegagalan)
 [ ] Idempotency webhook diuji (dobel kirim)
 [ ] Failover 9Router / retry diuji
