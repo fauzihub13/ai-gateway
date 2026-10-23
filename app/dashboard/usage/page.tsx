@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Activity, ArrowDownToLine, ArrowUpFromLine, Database, PiggyBank, Sigma, TrendingUp, Wallet } from 'lucide-react';
+import { Activity, ArrowDownToLine, ArrowUpFromLine, Database, Loader2, PiggyBank, Sigma, TrendingUp, Wallet } from 'lucide-react';
 import { PageHeader, StatCard } from '@/components/stat-card';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -19,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatIdr, formatNumber } from '@/lib/utils';
 import { apiFetch } from '@/lib/client';
+import { UsageShareCard } from '@/components/usage-share-card';
 
 interface UsageItem {
   key: string;
@@ -124,6 +125,7 @@ export default function UsagePage() {
         <TabsList>
           <TabsTrigger value="summary">Ringkasan</TabsTrigger>
           <TabsTrigger value="logs">Log request</TabsTrigger>
+          <TabsTrigger value="card">Kartu</TabsTrigger>
         </TabsList>
         <TabsContent value="summary">
           <SummaryTab />
@@ -131,9 +133,45 @@ export default function UsagePage() {
         <TabsContent value="logs">
           <LogsTab />
         </TabsContent>
+        <TabsContent value="card">
+          <CardTab />
+        </TabsContent>
       </Tabs>
     </div>
   );
+}
+
+/** Tab kartu share: butuh email user untuk footer kartu — diambil sekali. */
+function CardTab() {
+  const [email, setEmail] = useState('');
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    apiFetch('/api/auth/me')
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('unauthorized'))))
+      .then((d) => setEmail(d.user?.email ?? ''))
+      .catch(() => setFailed(true));
+  }, []);
+
+  if (failed) {
+    return (
+      <Card>
+        <div className="p-10 text-center text-sm text-muted-foreground">
+          Gagal memuat. Pastikan kamu masih login, lalu refresh halaman.
+        </div>
+      </Card>
+    );
+  }
+  if (!email) {
+    return (
+      <Card>
+        <div className="flex h-40 items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </Card>
+    );
+  }
+  return <UsageShareCard email={email} />;
 }
 
 function SummaryTab() {
