@@ -78,9 +78,17 @@ export async function POST(req: Request) {
       if (balance <= 0) throw new InsufficientBalanceError();
     }
 
+    // `max_tokens` hanya untuk validasi lokal — jangan pernah diteruskan ke
+    // provider (lihat catatan di `enforceModelLimits`). `JSON.stringify`
+    // membuang nilai `undefined`.
     const upstream = await nineRouterFetch('/v1/chat/completions', {
       method: 'POST',
-      body: JSON.stringify({ ...body, model: model.internalName, stream: false }),
+      body: JSON.stringify({
+        ...body,
+        max_tokens: undefined,
+        model: model.internalName,
+        stream: false,
+      }),
       signal: AbortSignal.timeout(120_000),
     });
 

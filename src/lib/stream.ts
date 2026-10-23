@@ -85,12 +85,12 @@ export const SSE_IDLE_ERROR_EVENT = buildSseErrorEvent(
  * - tandai stream yang TERPOTONG (tanpa `finish_reason`/`[DONE]`) sebagai error,
  *   bukan sebagai "selesai normal".
  *
- * Catatan penting soal kenapa deteksi truncation ada di sini:
- * Sebelumnya stream yang diputus di tengah hanya di-inject `[DONE]`. Bagi klien
- * OpenAI-compatible, `[DONE]` berarti "turn selesai" — jadi task panjang yang
- * terpotong di langkah C terlihat sukses, klien berhenti, dan user harus
- * mem-prompt lagi untuk melanjutkan. Sekarang kondisi itu dikirim sebagai
- * `event: error` agar klien tahu harus retry/lanjut.
+ * Catatan penting: deteksi truncation di sini HANYA untuk akurasi status
+ * billing (`PARTIAL`). Tidak ada `event: error` yang di-inject ke stream untuk
+ * `finish_reason: "length"` maupun stream terputus, karena banyak client
+ * OpenAI-compatible menganggap `event: error` sebagai kegagalan turn dan
+ * menghentikan agent di tengah task. Gateway tidak boleh memotong atau
+ * "mengoreksi" turn yang sudah berjalan.
  */
 export function createNormalizer(
   publicModel: string,
@@ -206,12 +206,11 @@ export function createNormalizer(
     const dataPayload = dataLines.join('\n');
 
     if (dataPayload === '[DONE]') {
-      // Sentinel TIDAK diteruskan sekarang. Kalau diteruskan di sini, klien
-      // OpenAI-compatible akan berhenti membaca tepat setelah `[DONE]`, sehingga
-      // event error yang kita kirim di `flush()` (mis. `length` / truncation)
-      // tidak pernah terlihat. Penulisan `[DONE]` dipusatkan di `flush()` agar
-      // selalu berada di urutan terakhir.
+      // Teruskan SEGERA. Menundanya sampai `flush()` membuat client menggantung
+      // bila upstream mengirim `[DONE]` lalu mempertahankan koneksi (keep-alive)
+      // tanpa menutup body. `flush()` hanya menulis `[DONE]` bila belum terlihat.
       state.sawDone = true;
+      safeEnqueue(controller, encoder.encode('data: [DONE]\n\n'));
       return;
     }
 
@@ -376,68 +375,44 @@ export function createNormalizer(
        * Kita kirim event error eksplisit supaya klien/user tahu harus lanjut,
        * dan menandai usage sebagai PARTIAL (tidak dihitung "selesai").
        */
-      const hitLength = state.finishReason === 'length';
-      if (hitLength) {
+      // `finish_reason: "length"` hanya dicatat untuk status billing (PARTIAL).
+      // TIDAK ada event error yang di-inject ke stream: banyak client
+      // OpenAI-compatible memperlakukan `event: error` sebagai kegagalan turn
+      // dan menghentikan agent di tengah task. Provider tetap mengirim
+      // `finish_reason: "length"` apa adanya, jadi client yang peduli bisa
+      // membacanya sendiri.
+      if (state.finishReason === 'length') {
         state.aborted = true;
-        // `errorCode` hanya diisi bila belum ada kode lain yang lebih spesifik.
         state.errorCode = state.errorCode ?? 'max_output_tokens_reached';
-        try {
-          controller.enqueue(
-            encoder.encode(
-              buildSseErrorEvent(
-                'Jawaban berhenti karena mencapai batas token output model (finish_reason: length). ' +
-                  'Bagian berikutnya belum dikerjakan — kirim "lanjutkan" untuk meneruskan, ' +
-                  'atau naikkan max_tokens.',
-                'max_output_tokens_reached',
-              ),
-            ),
-          );
-        } catch {
-          // stream sudah tertutup di sisi klien
-        }
       }
 
       {
         /**
-         * Upstream menutup koneksi, dengan atau tanpa `[DONE]`. Karena `[DONE]`
-         * selalu ditunda sampai titik ini, blok ini juga yang menulis sentinel
-         * terakhir. Dua kemungkinan yang dulu sama-sama tampak "selesai":
+         * Stream dianggap TERPOTONG hanya bila TIDAK ada `finish_reason` DAN
+         * TIDAK ada `[DONE]` — dua-duanya penanda sah bahwa turn selesai.
          *
-         * 1. Normal: provider tidak mengirim sentinel, tapi sudah memberi
-         *    `finish_reason` (stop/length/tool_calls). Klien boleh menganggap
-         *    jawaban utuh.
-         * 2. TERPOTONG: tidak ada `[DONE]`, tidak ada `finish_reason`, dan
-         *    sudah ada sebagian token. Inilah kasus "task berhenti di langkah C".
-         *    Dulu hanya di-inject `[DONE]` sehingga klien mengira jawaban
-         *    selesai, padahal model belum menutup turn-nya.
+         * Versi sebelumnya hanya mengecek `finish_reason`, sehingga provider
+         * yang mengirim `[DONE]` tanpa chunk `finish_reason` selalu salah
+         * ditandai terpotong. Itu penyebab respons normal ikut "berhenti".
          *
-         * Untuk kasus 2 kita kirim event error lebih dulu supaya klien tahu ini
-         * terpotong dan bisa retry, bukan diam-diam berhenti.
+         * Kondisi ini hanya dicatat untuk status billing. TIDAK ada event error
+         * yang di-inject ke stream, supaya client tidak menghentikan turn.
          */
-        const truncated = !state.finishReason && sawDelta;
+        const truncated = !state.finishReason && !state.sawDone && sawDelta;
 
         if (truncated) {
           state.aborted = true;
           state.errorCode = 'upstream_stream_truncated';
+        }
+
+        // `[DONE]` mungkin sudah diteruskan lebih awal oleh `emitEvent`.
+        if (!state.sawDone) {
+          state.sawDone = true;
           try {
-            controller.enqueue(
-              encoder.encode(
-                buildSseErrorEvent(
-                  'Jawaban terputus sebelum selesai (upstream menutup koneksi tanpa penutup turn). ' +
-                    'Hasil di atas mungkin belum lengkap — silakan lanjutkan atau ulangi permintaan.',
-                  'upstream_stream_truncated',
-                ),
-              ),
-            );
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
           } catch {
             // stream sudah tertutup di sisi klien
           }
-        }
-
-        try {
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-        } catch {
-          // stream sudah tertutup di sisi klien
         }
       }
 

@@ -91,15 +91,31 @@ describe('stream normalizer', () => {
     expect(out.match(/data: \[DONE\]/g)?.length).toBe(1);
   });
 
-  it('menandai stream terpotong (tanpa finish_reason/[DONE]) sebagai error', async () => {
+  it('mencatat stream terpotong tanpa meng-inject error ke client', async () => {
     // Simulasi: model sudah mengeluarkan teks lalu koneksi ditutup sepihak.
     const { out, settled } = await runStream([delta('langkah A'), delta('langkah B')]);
 
-    expect(out).toContain('event: error');
-    expect(out).toContain('upstream_stream_truncated');
+    // Status internal tetap PARTIAL, tetapi stream TIDAK dikirimi event error
+    // (client tidak boleh dipaksa menghentikan turn oleh gateway).
     expect(settled.errorCode).toBe('upstream_stream_truncated');
+    expect(out).not.toContain('event: error');
+    expect(out).not.toContain('upstream_stream_truncated');
     // Klien tetap menerima [DONE] supaya bisa menutup turn dengan rapi.
     expect(out).toContain('data: [DONE]\n\n');
+  });
+
+  it('TIDAK menandai terpotong bila ada [DONE] walau tanpa finish_reason', async () => {
+    // Quirk 9Router: kadang [DONE] dikirim tanpa chunk finish_reason.
+    const { out, settled } = await runStream([delta('selesai'), 'data: [DONE]\n\n']);
+    expect(settled.errorCode).toBeUndefined();
+    expect(out).not.toContain('event: error');
+  });
+
+  it('finish_reason length hanya dicatat untuk billing, tidak mengirim error', async () => {
+    const { out, settled } = await runStream([delta('terpotong'), finish('length')]);
+    expect(settled.errorCode).toBe('max_output_tokens_reached');
+    expect(out).not.toContain('event: error');
+    expect(out).toContain('"finish_reason":"length"');
   });
 
   it('TIDAK menandai terpotong bila chunk hanya role pembuka (belum ada delta)', async () => {
@@ -115,12 +131,14 @@ describe('stream normalizer', () => {
     const reasoningOnly = await runStream([
       'data: {"choices":[{"delta":{"reasoning_content":"berpikir..."},"finish_reason":null}]}\n\n',
     ]);
-    expect(reasoningOnly.out).toContain('upstream_stream_truncated');
+    expect(reasoningOnly.settled.errorCode).toBe('upstream_stream_truncated');
+    expect(reasoningOnly.out).not.toContain('event: error');
 
     const toolOnly = await runStream([
       'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1"}]},"finish_reason":null}]}\n\n',
     ]);
-    expect(toolOnly.out).toContain('upstream_stream_truncated');
+    expect(toolOnly.settled.errorCode).toBe('upstream_stream_truncated');
+    expect(toolOnly.out).not.toContain('event: error');
   });
 
   it('menangani CRLF dan event terakhir tanpa penutup \\n\\n', async () => {

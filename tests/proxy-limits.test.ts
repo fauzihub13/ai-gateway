@@ -6,15 +6,26 @@ const model = { contextWindow: 1000, maxOutputTokens: 200 };
 const msg = (content: string) => ({ role: 'user', content });
 
 describe('enforceModelLimits', () => {
-  it('clamps explicit max_tokens to model.maxOutputTokens and forwards it', () => {
+  it('validates explicit max_tokens locally but NEVER forwards it upstream', () => {
     const out = enforceModelLimits(model, { messages: [msg('hi')], max_tokens: 99999 });
-    expect(out.upstreamBody.max_tokens).toBe(200);
+    expect('max_tokens' in out.upstreamBody).toBe(false);
     expect(out.requestedMaxTokens).toBe(99999);
   });
 
-  it('lets small explicit max_tokens through untouched', () => {
+  it('strips small explicit max_tokens too (provider uses its own default)', () => {
     const out = enforceModelLimits(model, { messages: [msg('hi')], max_tokens: 50 });
-    expect(out.upstreamBody.max_tokens).toBe(50);
+    expect('max_tokens' in out.upstreamBody).toBe(false);
+    expect(out.requestedMaxTokens).toBe(50);
+  });
+
+  it('strips max_completion_tokens (newer OpenAI field) as well', () => {
+    const out = enforceModelLimits(model, {
+      messages: [msg('hi')],
+      max_completion_tokens: 50,
+    } as unknown as { messages: Array<{ role: string; content: unknown }>; max_tokens?: number });
+    expect('max_tokens' in out.upstreamBody).toBe(false);
+    expect('max_completion_tokens' in out.upstreamBody).toBe(false);
+    expect(out.requestedMaxTokens).toBe(50);
   });
 
   it('omits max_tokens entirely when user does not send it (no gateway default)', () => {
@@ -43,11 +54,12 @@ describe('enforceModelLimits', () => {
     expect(out.promptTokens).toBeGreaterThan(0);
   });
 
-  it('falls back cap to contextWindow when maxOutputTokens is null (clamp applied)', () => {
+  it('falls back cap to contextWindow when maxOutputTokens is null (validation only)', () => {
     const m = { contextWindow: 1000, maxOutputTokens: null };
     const out = enforceModelLimits(m, { messages: [msg('hi')], max_tokens: 900 });
-    // clamp ke contextWindow 1000 tidak aktif karena 900 < 1000; budget 911 < 1000 lolos.
-    expect(out.upstreamBody.max_tokens).toBe(900);
+    // 900 < 1000 → lolos validasi, tapi tetap TIDAK dikirim ke upstream.
+    expect('max_tokens' in out.upstreamBody).toBe(false);
+    expect(out.requestedMaxTokens).toBe(900);
   });
 
   it('rejects explicit max_tokens whose clamped value busts the budget (cap fallback case)', () => {

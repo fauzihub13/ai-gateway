@@ -235,47 +235,41 @@ export const ChatBodySchema = z
   .passthrough();
 
 /**
- * Limit diturunkan dari baris Model (contextWindow/maxOutputTokens), bukan hardcode global.
- * - max_tokens di-clamp ke model.maxOutputTokens (UX: jangan tolak, cukup turunkan).
- * - prompt estimate > contextWindow - max_tokens → error context_length_exceeded yang jelas.
- * Return body dengan max_tokens sudah di-clamp.
+ * Limit diturunkan dari baris Model (contextWindow/maxOutputTokens), bukan
+ * hardcode global. Dipakai HANYA sebagai validasi lokal.
  */
 export interface EnforceModelLimitsResult<T> {
   /**
    * Body yang siap dikirim ke UPSTREAM.
    *
-   * ATURAN: batas lokal (row Model) dipakai sebagai gerbang/validasi terhadap
-   * request USER saja. Ke upstream, `max_tokens` hanya diteruskan bila USER
-   * mengirimnya secara eksplisit — bila tidak, field TIDAK di-inject dan
-   * provider memakai default internalnya. Menyuntikkan alokasi output sebesar
-   * kapasitas model ternyata ditolak beberapa provider (400 `max_tokens_exceeded`
-   * lalu `request_rejected` walau di bawah limit) — kasus deepseek/openscale.
+   * ATURAN KERAS: `max_tokens` / `max_completion_tokens` **tidak pernah**
+   * diteruskan ke upstream, apa pun yang dikirim client. Nilai itu hanya
+   * dipakai sebagai gerbang validasi lokal terhadap row Model di DB.
+   *
+   * Alasannya: provider memakai default output internalnya sendiri yang
+   * biasanya jauh lebih besar (atau tidak membatasi), sehingga task panjang
+   * selesai utuh. Begitu gateway mengirim `max_tokens`, provider memotong
+   * jawaban tepat di angka itu (`finish_reason: "length"`) — persis gejala
+   * "task berhenti di tengah".
    */
   upstreamBody: T;
   /** Prompt tokens hasil estimasi lokal (untuk log/telemetri). */
   promptTokens: number;
   /**
    * `max_tokens` yang diminta user (eksplisit), atau null bila tidak mengirim.
-   * Tidak pernah berisi default buatan gateway.
+   * Hanya untuk validasi/estimasi lokal — TIDAK pernah dikirim ke upstream.
    */
   requestedMaxTokens: number | null;
 }
 
 /**
- * Gerbang limit berbasis baris Model. Dua peran, hati-hati jangan tertukar:
+ * Gerbang limit berbasis row Model — **lokal saja**.
  *
- * 1. VALIDASI REQUEST USER (selalu): prompt estimasi + `max_tokens` eksplisit
- *    user tidak boleh melebihi contextWindow / maxOutputTokens row Model.
- *    Pelanggaran → 400 `context_length_exceeded` / clamp ke margin wajar.
- * 2. TERUSKAN KE UPSTREAM (hanya apa yang user minta): `max_tokens` user
- *    diteruskan apa adanya (di-clamp ke maxOutputTokens bila terpasang).
- *    User tidak mengirim → TIDAK di-inject sama sekali. Default provider
- *    (umumnya 4k–16k) memang bisa memotong jawaban agent panjang, tapi itu
- *    masalah klien untuk kirim `max_tokens` eksplisit — bukan alasan gateway
- *    mengarang angka yang provider bisa tolak.
- *
- * Return `upstreamBody` + telemetri. Tidak pernah melempar untuk kasus
- * "default terlalu besar" karena tidak ada default lagi.
+ * 1. VALIDASI REQUEST USER: `max_tokens` / `max_completion_tokens` eksplisit
+ *    (bila ada) tidak boleh melebihi `maxOutputTokens` maupun sisa
+ *    `contextWindow` row Model. Pelanggaran → 400 `context_length_exceeded`.
+ * 2. KE UPSTREAM: kedua field itu SELALU dibuang. Provider bebas memakai
+ *    kapasitas output aslinya.
  */
 export function enforceModelLimits<T extends { messages: Array<{ role: string; content: unknown }>; max_tokens?: number }>(
   model: { contextWindow: number; maxOutputTokens: number | null },
@@ -284,55 +278,44 @@ export function enforceModelLimits<T extends { messages: Array<{ role: string; c
   const promptTokens = estimatePromptTokens(body.messages);
   const cap = model.maxOutputTokens ?? model.contextWindow;
 
-  const requested = body.max_tokens;
-  let upstreamMaxTokens: number | undefined;
+  // Client bisa memakai nama field lama (`max_tokens`) atau baru
+  // (`max_completion_tokens`). Keduanya hanya dipakai untuk validasi lokal.
+  const raw = body as { max_tokens?: number; max_completion_tokens?: number };
+  const requested = raw.max_tokens ?? raw.max_completion_tokens ?? null;
 
   if (requested != null) {
-    /**
-     * User minta eksplisit: clamp ke `cap` (UX: jangan tolak, cukup turunkan),
-     * lalu cek budget gabungan terhadap context window lokal.
-     */
-    const maxTokens = requested > cap ? cap : requested;
-    const budget = promptTokens + maxTokens;
-    if (budget > model.contextWindow) {
+    // Clamp ke kemampuan output model, lalu cek budget gabungan terhadap
+    // context window lokal. Ini murni pengecekan — nilainya tidak diteruskan.
+    const effective = Math.min(requested, cap);
+    if (promptTokens + effective > model.contextWindow) {
       throw new BadRequestError(
         'context_length_exceeded',
         `This request exceeds the ${model.contextWindow}-token context window for this model ` +
-          `(prompt ~${promptTokens} tokens + max_tokens ${maxTokens}). ` +
+          `(prompt ~${promptTokens} tokens + max_tokens ${effective}). ` +
           `Reduce the conversation history or lower max_tokens.`,
         'messages',
       );
     }
-    upstreamMaxTokens = maxTokens;
-  } else {
-    /**
-     * User tidak mengirim `max_tokens` → jangan inject. Cek prompt terhadap
-     * contextWindow saja supaya prompt keterlaluan ditolak di sini dengan
-     * pesan yang jelas (bukan 400 samar dari provider).
-     */
-    if (promptTokens > model.contextWindow) {
-      throw new BadRequestError(
-        'context_length_exceeded',
-        `This prompt (~${promptTokens} tokens) exceeds the ${model.contextWindow}-token context window for this model. ` +
-          `Reduce the conversation history.`,
-        'messages',
-      );
-    }
-    upstreamMaxTokens = undefined;
+  } else if (promptTokens > model.contextWindow) {
+    throw new BadRequestError(
+      'context_length_exceeded',
+      `This prompt (~${promptTokens} tokens) exceeds the ${model.contextWindow}-token context window for this model. ` +
+        `Reduce the conversation history.`,
+      'messages',
+    );
   }
 
-  const upstreamBody = (upstreamMaxTokens === undefined
-    ? omit(body, ['max_tokens'])
-    : { ...body, max_tokens: upstreamMaxTokens }) as T;
+  // Inti perbaikan: jangan pernah kirim plafon output ke provider.
+  const upstreamBody = omitKeys(body, ['max_tokens', 'max_completion_tokens']) as T;
 
-  return { upstreamBody, promptTokens, requestedMaxTokens: requested ?? null };
+  return { upstreamBody, promptTokens, requestedMaxTokens: requested };
 }
 
 /** Salin `body` tanpa key yang disebut (shallow). */
-function omit<T extends object, K extends keyof T>(obj: T, keys: readonly K[]): Omit<T, K> {
-  const out = { ...obj };
+function omitKeys<T extends object>(obj: T, keys: readonly string[]): T {
+  const out = { ...obj } as Record<string, unknown>;
   for (const k of keys) delete out[k];
-  return out as Omit<T, K>;
+  return out as T;
 }
 
 export function assertCapabilities(
