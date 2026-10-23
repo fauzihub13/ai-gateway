@@ -210,7 +210,11 @@ export const ChatBodySchema = z
       .array(
         z.object({
           role: z.enum(['system', 'user', 'assistant', 'tool']),
-          content: z.union([z.string(),z.array(z.any()).max(50), z.null()]),
+          // Batas panjang teks tidak divalidasi di sini.
+          // Payload dibatasi oleh client_max_body_size Nginx (50M)
+          // dan context window model upstream.
+          // Validasi Zod hanya memastikan tipe data, bukan ukuran.
+          content: z.union([z.string(), z.array(z.any()).max(50), z.null()]),
           name: z.string().max(64).optional(),
           tool_call_id: z.string().max(128).optional(),
         }),
@@ -242,7 +246,23 @@ export function enforceModelLimits<T extends { messages: Array<{ role: string; c
 ): T {
   const promptTokens = estimatePromptTokens(body.messages);
   const cap = model.maxOutputTokens ?? model.contextWindow;
-  const maxTokens = body.max_tokens && body.max_tokens > cap ? cap : body.max_tokens;
+
+  /**
+   * Default `max_tokens` bila klien tidak mengirimnya.
+   *
+   * Dulu nilai ini dibiarkan `undefined` dan diteruskan apa adanya ke upstream,
+   * sehingga provider memakai **default internalnya sendiri** (umumnya 4k–16k
+   * token). Untuk task agent panjang hal itu memotong jawaban di tengah jalan
+   * dengan `finish_reason: "length"` — persis gejala "task berhenti di langkah C
+   * tanpa error". Karena kita menjual akses model apa adanya, default yang benar
+   * adalah kapasitas output model itu sendiri (dikurangi sisa context window).
+   *
+   * Klien tetap bisa memilih angka lebih kecil secara eksplisit.
+   */
+  const remainingContext = Math.max(1, model.contextWindow - promptTokens);
+  const defaultMaxTokens = Math.max(1, Math.min(cap, remainingContext));
+  const requested = body.max_tokens ?? defaultMaxTokens;
+  const maxTokens = requested > cap ? cap : requested;
   const budget = promptTokens + (maxTokens ?? 0);
   if (budget > model.contextWindow) {
     throw new BadRequestError(

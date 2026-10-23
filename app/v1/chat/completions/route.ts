@@ -9,16 +9,95 @@ import {
   type PreflightContext,
 } from '@/lib/proxy';
 import { nineRouterFetch } from '@/lib/ninerouter';
-import { createNormalizer, extractCachedTokens } from '@/lib/stream';
+import {
+  createNormalizer,
+  extractCachedTokens,
+  SSE_CONNECTED_COMMENT,
+  buildSseErrorEvent,
+} from '@/lib/stream';
 import { settleUsage, computeCostBreakdown } from '@/lib/billing';
 import { estimatePromptTokens, estimateTokens, promptToText } from '@/lib/tokens';
-import { toErrorResponse, BadRequestError, InternalError } from '@/lib/errors';
+import { toErrorResponse, BadRequestError, InternalError, UpstreamTimeoutError } from '@/lib/errors';
 import { mapUpstreamError } from '@/lib/upstream';
 import { getRequestId, getClientIp, json } from '@/lib/http';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-export const maxDuration = 300;
+// 30 menit. Hanya berlaku di platform serverless (Vercel) sesuai plan; pada
+// deployment `next start` di VPS nilai ini tidak berpengaruh. Stream sendiri
+// tidak dibatasi durasi total — hanya idle upstream (lihat UPSTREAM_IDLE_MS).
+export const maxDuration = 1800;
+
+/**
+ * Batas idle upstream (tidak ada byte sama sekali).
+ *
+ * Sengaja LEBIH BESAR dari watchdog di `createNormalizer` (120 dtk) supaya
+ * watchdog punya kesempatan mengirim `event: error` yang rapi ke klien lebih
+ * dulu. Abort di sini adalah jaring pengaman terakhir bila watchdog gagal
+ * (misal event loop tersumbat) — dan saat itu pun stream ditutup dengan event
+ * error, bukan dipotong diam-diam.
+ */
+function envMs(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+const STREAM_UPSTREAM_IDLE_MS = envMs('UPSTREAM_STREAM_IDLE_TIMEOUT_MS', 180_000);
+const NONSTREAM_UPSTREAM_TIMEOUT_MS = envMs('UPSTREAM_TIMEOUT_MS', 120_000);
+
+/**
+ * Bungkus body upstream agar:
+ * 1. `onActivity()` dipanggil setiap chunk → timer idle di-reset.
+ * 2. Bila upstream putus/abort di tengah stream, klien tetap menerima event
+ *    error yang bisa dibaca, lalu stream ditutup normal (bukan error mentah).
+ */
+function guardUpstreamBody(
+  body: ReadableStream<Uint8Array>,
+  onActivity: () => void,
+  onDone: () => void,
+): ReadableStream<Uint8Array> {
+  const reader = body.getReader();
+  const enc = new TextEncoder();
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) {
+          onDone();
+          controller.close();
+          return;
+        }
+        onActivity();
+        controller.enqueue(value);
+      } catch {
+        onDone();
+        // Upstream mati di tengah stream. Kirim event error supaya klien tahu
+        // ini terpotong, bukan selesai. Normalizer akan meneruskannya sebagai
+        // `data: {...}` lalu meng-inject `[DONE]` pada flush().
+        try {
+          controller.enqueue(
+            enc.encode(
+              buildSseErrorEvent(
+                'Koneksi ke model terputus sebelum jawaban selesai. Silakan coba lagi.',
+                'upstream_stream_interrupted',
+              ),
+            ),
+          );
+        } catch {
+          // controller sudah tidak bisa menerima data
+        }
+        controller.close();
+      }
+    },
+    cancel(reason) {
+      onDone();
+      return reader.cancel(reason);
+    },
+  });
+}
 
 export async function POST(req: Request) {
   const requestId = getRequestId(req);
@@ -26,7 +105,16 @@ export async function POST(req: Request) {
   let ctx: PreflightContext | null = null;
 
   try {
-    const rawBody = await req.json();
+    // Body dibaca sebagai teks lalu di-parse sendiri: `req.json()` melempar
+    // SyntaxError mentah untuk payload besar/terpotong, yang lalu jadi 500
+    // "internal_error" padahal masalahnya ada di request klien.
+    const rawText = await req.text();
+    let rawBody: unknown;
+    try {
+      rawBody = JSON.parse(rawText);
+    } catch {
+      throw new BadRequestError('invalid_json', 'Request body is not valid JSON.');
+    }
     const body = ChatBodySchema.parse(rawBody);
     const ip = getClientIp(req);
 
@@ -35,13 +123,16 @@ export async function POST(req: Request) {
     const limited = enforceModelLimits(ctx.model, body);
 
     // Gerbang limit per-key dicek SEKARANG (sebelum upstream), bukan tengah stream.
-    // Estimasi pakai max_tokens yang sudah di-clamp; settle tetap rekam biaya aktual.
-    // SUBSCRIPTION tidak memotong saldo → charged 0, gerbang key otomatis lolos.
+    // Estimasi memakai `max_tokens` EKSPLISIT dari klien, bukan default yang
+    // diresolusi `enforceModelLimits`. Default bisa sebesar kapasitas model
+    // (131k token) sehingga estimasi akan menolak request yang sebenarnya wajar;
+    // `settle` tetap merekam biaya aktual. SUBSCRIPTION tidak memotong saldo →
+    // charged 0, gerbang key otomatis lolos.
     const estimate = computeCostBreakdown({
       model: ctx.model,
       plan: ctx.plan,
       promptTokens: estimatePromptTokens(limited.messages),
-      completionTokens: limited.max_tokens ?? 0,
+      completionTokens: body.max_tokens ?? 0,
     });
     await assertKeyPeriodLimit(ctx, estimate.chargedIdr);
 
@@ -51,16 +142,45 @@ export async function POST(req: Request) {
     const upstreamBody = { ...limited, model: ctx.model.internalName, stream: wantsStream };
     const upstreamStart = Date.now();
 
-    const upstream = await nineRouterFetch('/v1/chat/completions', {
-      method: 'POST',
-      body: JSON.stringify(upstreamBody),
-      signal: AbortSignal.timeout(wantsStream ? 300_000 : 120_000),
-    }).catch((e: unknown) => {
-      if (e instanceof Error && e.name === 'TimeoutError') throw new InternalError('upstream_timeout');
+    // ── Idle-based abort (bukan total timeout) ─────────────────────────────
+    // Timeout total memutus task panjang walau model masih aktif mengeluarkan
+    // token. Yang benar: batalkan hanya bila TIDAK ADA byte dari upstream.
+    const ac = new AbortController();
+    const idleMs = wantsStream ? STREAM_UPSTREAM_IDLE_MS : NONSTREAM_UPSTREAM_TIMEOUT_MS;
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const clearIdle = (): void => {
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+      }
+    };
+    const resetIdle = (): void => {
+      clearIdle();
+      idleTimer = setTimeout(() => ac.abort(new Error('upstream_idle_timeout')), idleMs);
+    };
+    resetIdle();
+
+    let upstream: Response;
+    try {
+      upstream = await nineRouterFetch('/v1/chat/completions', {
+        method: 'POST',
+        body: JSON.stringify(upstreamBody),
+        signal: ac.signal,
+      });
+    } catch (e: unknown) {
+      clearIdle();
+      const reason = ac.signal.reason;
+      const idle = ac.signal.aborted && reason instanceof Error && reason.message === 'upstream_idle_timeout';
+      if (idle) throw new UpstreamTimeoutError();
+      if (e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
+        throw new InternalError('upstream_timeout');
+      }
       throw new InternalError('upstream_unavailable');
-    });
+    }
 
     if (!upstream.ok) {
+      clearIdle();
       await recordUsage(ctx, {
         requestId, endpoint: 'chat.completions', streamed: wantsStream,
         promptTokens: estimatePromptTokens(body.messages), completionTokens: 0,
@@ -70,7 +190,18 @@ export async function POST(req: Request) {
     }
 
     if (!wantsStream) {
-      const data = (await upstream.json()) as Record<string, unknown>;
+      let data: Record<string, unknown>;
+      try {
+        data = (await upstream.json()) as Record<string, unknown>;
+      } catch (e) {
+        const reason = ac.signal.reason;
+        if (ac.signal.aborted && reason instanceof Error && reason.message === 'upstream_idle_timeout') {
+          throw new UpstreamTimeoutError();
+        }
+        throw new InternalError('upstream_unavailable');
+      } finally {
+        clearIdle();
+      }
       data.model = ctx.model.publicName;
 
       const usage = data.usage as
@@ -116,8 +247,16 @@ export async function POST(req: Request) {
       promptText,
       async (state) => {
         const usage = state.usage!;
+        // `errorCode` diisi normalizer bila stream terpotong: idle timeout,
+        // koneksi putus, atau `finish_reason: "length"` (kena cap token output).
+        // Semua kondisi itu BUKAN pemakaian selesai → catat PARTIAL supaya
+        // laporan usage tidak menyesatkan.
         const status =
-          state.finishReason === 'stop' || state.sawDone ? 'COMPLETED' : 'PARTIAL';
+          state.errorCode
+            ? 'PARTIAL'
+            : state.finishReason === 'stop' || state.sawDone
+              ? 'COMPLETED'
+              : 'PARTIAL';
         const cost = computeCostBreakdown({
           model: finalCtx.model, plan: finalCtx.plan,
           promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens,
@@ -130,13 +269,53 @@ export async function POST(req: Request) {
           costIdr: cost.valueIdr, chargedIdr: cost.chargedIdr, savedIdr: cost.savedIdr,
           status, latencyMs: Date.now() - start,
           upstreamLatencyMs: Date.now() - upstreamStart,
+          errorCode: state.errorCode,
         });
       },
     );
 
-    const normalized = upstream.body!.pipeThrough(normalizer);
+    // pipe upstream -> normalizer, dengan guard aktivitas (reset timer idle tiap
+    // chunk) sekaligus konversi putus-koneksi jadi event error yang terbaca klien.
+    const guarded = guardUpstreamBody(upstream.body!, resetIdle, clearIdle);
+    const out = guarded.pipeThrough(normalizer);
 
-    return new Response(normalized, {
+    // `: connected` "memanaskan" koneksi: Cloudflare/Nginx melihat byte pertama
+    // segera setelah header sehingga koneksi tidak dianggap idle sejak awal.
+    const encoder = new TextEncoder();
+    const merged = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        try {
+          controller.enqueue(encoder.encode(SSE_CONNECTED_COMMENT));
+        } catch {
+          // klien sudah menutup koneksi
+        }
+
+        const reader = out.getReader();
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            controller.enqueue(value);
+          }
+          controller.close();
+        } catch {
+          // stream upstream error setelah header terkirim: tutup rapi.
+          try {
+            controller.close();
+          } catch {
+            // sudah tertutup
+          }
+        } finally {
+          clearIdle();
+        }
+      },
+      cancel(reason) {
+        clearIdle();
+        return out.cancel(reason);
+      },
+    });
+
+    return new Response(merged, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache, no-transform',
@@ -157,6 +336,23 @@ export async function POST(req: Request) {
       return toErrorResponse(
         new BadRequestError('invalid_request_error', message, issue?.path.join('.') ?? null),
         requestId,
+      );
+    }
+    // Error idle yang terjadi sebelum header terkirim → 504 dengan pesan jelas.
+    // Angka detik diambil dari konfigurasi aktif supaya pesan tidak berbohong
+    // saat env diubah.
+    if (err instanceof UpstreamTimeoutError) {
+      const seconds = Math.round(STREAM_UPSTREAM_IDLE_MS / 1000);
+      return Response.json(
+        {
+          error: {
+            message: `Model tidak merespons dalam ${seconds} detik. Silakan coba lagi atau pecah tugas Anda.`,
+            type: 'upstream_idle_timeout',
+            code: 'upstream_idle_timeout',
+            param: null,
+          },
+        },
+        { status: 504, headers: { 'x-request-id': requestId } },
       );
     }
     return toErrorResponse(err, requestId);
