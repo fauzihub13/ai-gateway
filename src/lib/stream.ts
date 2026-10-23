@@ -276,6 +276,24 @@ export function createNormalizer(
   };
 
   /**
+   * Pastikan `state.usage` selalu terisi. Dipakai `flush()` dan juga watchdog:
+   * dulu watchdog memanggil `finalize()` sebelum estimasi usage dijalankan,
+   * sehingga `onSettle` menerima `usage === undefined` dan pencatatan billing
+   * gagal dengan "Cannot read properties of undefined (reading 'prompt_tokens')".
+   */
+  const ensureUsage = (): void => {
+    if (state.usage) return;
+    const completion = estimateTokens(state.contentBuffer.join(''));
+    const prompt = estimateTokens(promptText);
+    state.usage = {
+      prompt_tokens: prompt,
+      completion_tokens: completion,
+      cachedPromptTokens: 0,
+      total_tokens: prompt + completion,
+    };
+  };
+
+  /**
    * Watchdog: upstream diam lebih lama dari `idleTimeoutMs`.
    * Kirim event error + [DONE], catat pemakaian parsial, lalu tutup stream.
    * Ini yang menggantikan perilaku lama "stream menggantung lalu hilang tanpa pesan".
@@ -291,6 +309,9 @@ export function createNormalizer(
     safeEnqueue(controller, encoder.encode('data: [DONE]\n\n'));
     closed = true;
     clearTimers();
+
+    // Estimasi dulu supaya onSettle tidak menerima usage undefined.
+    ensureUsage();
 
     // Tunggu settle selesai sebelum terminate agar pencatatan usage tidak ikut
     // mati bersama response (best-effort, tidak pernah membatalkan apa pun).
@@ -422,16 +443,7 @@ export function createNormalizer(
         }
       }
 
-      if (!state.usage) {
-        const completion = estimateTokens(state.contentBuffer.join(''));
-        const prompt = estimateTokens(promptText);
-        state.usage = {
-          prompt_tokens: prompt,
-          completion_tokens: completion,
-          cachedPromptTokens: 0,
-          total_tokens: prompt + completion,
-        };
-      }
+      ensureUsage();
 
       await finalize();
     },

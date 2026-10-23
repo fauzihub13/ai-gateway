@@ -257,7 +257,14 @@ export async function POST(req: Request) {
       finalCtx.model.internalName,
       promptText,
       async (state) => {
-        const usage = state.usage!;
+        // `ensureUsage()` di normalizer menjamin ini terisi; fallback tetap
+        // disediakan supaya kegagalan pencatatan usage tidak pernah melempar.
+        const usage = state.usage ?? {
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          cachedPromptTokens: 0,
+          total_tokens: 0,
+        };
         // `errorCode` diisi normalizer bila stream terpotong: idle timeout,
         // koneksi putus, atau `finish_reason: "length"` (kena cap token output).
         // Semua kondisi itu BUKAN pemakaian selesai → catat PARTIAL supaya
@@ -293,6 +300,12 @@ export async function POST(req: Request) {
     // `: connected` "memanaskan" koneksi: Cloudflare/Nginx melihat byte pertama
     // segera setelah header sehingga koneksi tidak dianggap idle sejak awal.
     const encoder = new TextEncoder();
+    /**
+     * Reader yang memegang lock `out`. Disimpan supaya `cancel()` bisa
+     * membatalkan lewat reader (bukan `out.cancel()` yang akan melempar
+     * `ERR_INVALID_STATE: ReadableStream is locked`).
+     */
+    let outReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
     const merged = new ReadableStream<Uint8Array>({
       async start(controller) {
         try {
@@ -302,6 +315,7 @@ export async function POST(req: Request) {
         }
 
         const reader = out.getReader();
+        outReader = reader;
         try {
           for (;;) {
             const { done, value } = await reader.read();
@@ -322,7 +336,10 @@ export async function POST(req: Request) {
       },
       cancel(reason) {
         clearIdle();
-        return out.cancel(reason);
+        // `out` sudah dilock oleh `outReader` di `start()`. Memanggil
+        // `out.cancel()` di sini melempar ERR_INVALID_STATE dan membuat Next
+        // mencatat "failed to pipe response". Batalkan lewat reader.
+        return outReader?.cancel(reason);
       },
     });
 
