@@ -27,10 +27,8 @@ export interface ShareCardData {
   cachedHitPct: number | null;
   /** Jumlah model berbeda yang benar-benar dipakai dalam rentang ini. */
   distinctModels: number;
-  /** Model paling sering dipakai (publicName); null bila belum ada pemakaian. */
-  topModel: string | null;
-  /** % request yang memakai topModel; null bila belum ada pemakaian. */
-  topModelPct: number | null;
+  /** Top 3 model berdasarkan jumlah request (terurut desc). Bisa kosong. */
+  topModels: Array<{ name: string; requests: number; pct: number }>;
   /** Nilai pemakaian terhadap harga resmi provider (tanpa markup) — bukan tagihan. */
   valueIdr: number;
   /** Yang benar-benar dipotong dari saldo (0 untuk SUBSCRIPTION). */
@@ -55,9 +53,9 @@ export async function buildShareCardData(
     status: { not: 'REJECTED' },
   };
 
-  // Satu pass agregasi + satu groupBy per model (paralel). GroupBy lengkap
-  // (tanpa take) memberi dua hal sekaligus: baris pertama (terurut count desc)
-  // = top model, panjang array = jumlah model berbeda.
+  // Dua query paralel: aggregate total + groupBy per model. GroupBy lengkap
+  // (tanpa take) memberi dua hal sekaligus: baris terurut count desc (top
+  // model = baris pertama) dan panjang array = jumlah model berbeda.
   const [totals, byModel] = await Promise.all([
     db.usageLog.aggregate({
       where,
@@ -84,15 +82,17 @@ export async function buildShareCardData(
   const completionTokens = totals._sum.completionTokens ?? 0;
   const totalTokens = totals._sum.totalTokens ?? promptTokens + completionTokens;
 
-  let topModel: string | null = null;
-  const topRow = byModel[0];
-  if (topRow) {
-    const m = await db.model.findUnique({
-      where: { id: topRow.modelId },
-      select: { publicName: true },
-    });
-    topModel = m?.publicName ?? null;
-  }
+  // Nama untuk top 3 model — satu findMany, diurut sesuai urutan count desc.
+  const topIds = byModel.slice(0, 3).map((r) => r.modelId);
+  const topNames = topIds.length
+    ? await db.model.findMany({ where: { id: { in: topIds } }, select: { id: true, publicName: true } })
+    : [];
+  const nameOf = Object.fromEntries(topNames.map((m) => [m.id, m.publicName]));
+  const topModels = byModel.slice(0, 3).map((r) => ({
+    name: nameOf[r.modelId] ?? r.modelId,
+    requests: r._count?._all ?? 0,
+    pct: requests > 0 && r._count ? round1((r._count._all / requests) * 100) : 0,
+  }));
 
   return {
     days: opts.days,
@@ -105,8 +105,7 @@ export async function buildShareCardData(
     cachedPromptTokens: totals._sum.cachedPromptTokens ?? 0,
     cachedHitPct: computeCacheHitPct(totals._sum.cachedPromptTokens ?? 0, promptTokens),
     distinctModels: byModel.length,
-    topModel,
-    topModelPct: requests > 0 && topRow && topRow._count ? round1((topRow._count._all / requests) * 100) : null,
+    topModels,
     valueIdr: totals._sum.costIdr ?? 0,
     chargedIdr: totals._sum.chargedIdr ?? 0,
   };

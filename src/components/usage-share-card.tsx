@@ -56,8 +56,7 @@ interface CardData {
   cachedPromptTokens: number;
   cachedHitPct: number | null;
   distinctModels: number;
-  topModel: string | null;
-  topModelPct: number | null;
+  topModels: Array<{ name: string; requests: number; pct: number }>;
   valueIdr: number;
   chargedIdr: number;
 }
@@ -91,6 +90,13 @@ function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number):
 
 /**
  * Render kartu lengkap. Semua koordinat dalam px logis; ctx sudah discale.
+ *
+ * Layout (1080×1350, margin 72):
+ *   header    : periode (eyebrow) + judul "Mpruy AI Overview"
+ *   hero      : TOKEN DIPROSES (angka terbesar) + in/out + total request
+ *   row 2     : dua card — CACHE HIT | MODEL DIPAKAI
+ *   top model : 3 baris nama + persentase bar
+ *   bawah     : nilai pemakaian + footer (teks kiri, logo kanan — bebas tabrakan)
  */
 function renderCard(
   ctx: CanvasRenderingContext2D,
@@ -132,120 +138,152 @@ function renderCard(
         ? "'JetBrains Mono', 'Departure Mono', ui-monospace, monospace"
         : "'Inter', ui-sans-serif, system-ui, sans-serif");
   };
+  const pct = (v: number): string => `${String(v).replace('.', ',')}%`;
 
   // ── Header ──
-  setFont(500, 13, true);
+  setFont(500, 14, true);
   ctx.fillStyle = C.electric;
-  ctx.fillText('USAGE // WRAPPED', 72, 96);
+  ctx.fillText(
+    `PERIODE · ${periodLabel(data.from ? new Date(data.from) : null, new Date(data.to))}`.toUpperCase(),
+    72,
+    96,
+  );
 
   setFont(700, 62);
   ctx.fillStyle = fg;
-  ctx.fillText('Laporan Pemakaian', 72, 168);
+  ctx.fillText('Mpruy AI Overview', 72, 170);
 
-  setFont(400, 22, true);
-  ctx.fillStyle = muted;
-  ctx.fillText(periodLabel(data.from ? new Date(data.from) : null, new Date(data.to)), 72, 210);
-
-  // ── Hero: total request ──
+  // ── Hero: TOKEN DIPROSES (angka terbesar di kartu) ──
   setFont(600, 15, true);
   ctx.fillStyle = muted;
-  ctx.fillText('TOTAL REQUEST', 72, 296);
+  ctx.fillText('TOKEN DIPROSES', 72, 302);
 
-  setFont(700, 120);
-  ctx.fillStyle = fg;
-  ctx.fillText(fullId(data.requests), 72, 402);
+  setFont(700, 122);
+  ctx.fillStyle = C.electric;
+  ctx.fillText(compactId(data.totalTokens), 72, 428);
 
-  // ── Token diproses ──
-  setFont(600, 15, true);
-  ctx.fillStyle = muted;
-  ctx.fillText('TOKEN DIPROSES', 72, 486);
-  setFont(700, 72);
-  ctx.fillStyle = fg;
-  ctx.fillText(compactId(data.totalTokens), 72, 562);
   setFont(400, 20);
   ctx.fillStyle = muted;
   ctx.fillText(
     `in ${compactId(data.promptTokens)}  ·  out ${compactId(data.completionTokens)}`,
     72,
-    600,
+    472,
   );
 
-  // ── Dua panel statistik: cache hit & model ──
-  const cacheAccent = data.cachedHitPct != null && data.cachedHitPct > 0;
-  const panels: Array<{ label: string; value: string; sub: string; accent: boolean; pct?: number }> = [
+  setFont(500, 18, true);
+  ctx.fillStyle = muted;
+  ctx.fillText(`${fullId(data.requests)} total request`, 72, 518);
+
+  // ── Row 2: dua card — CACHE HIT | MODEL DIPAKAI ──
+  const cardW = (W - 144 - 24) / 2; // 456
+  const cardY = 568;
+  const cards: Array<{ label: string; value: string; sub: string; accent: boolean }> = [
     {
       label: 'CACHE HIT',
-      value: data.cachedHitPct == null ? '—' : `${String(data.cachedHitPct).replace('.', ',')}%`,
+      value: data.cachedHitPct == null ? '—' : pct(data.cachedHitPct),
       sub: `${compactId(data.cachedPromptTokens)} token dari cache`,
-      accent: cacheAccent,
+      accent: data.cachedHitPct != null && data.cachedHitPct > 0,
     },
     {
       label: 'MODEL DIPAKAI',
       value: String(data.distinctModels),
-      sub: data.topModel
-        ? `favorit: ${data.topModel}${data.topModelPct != null ? ` · ${String(data.topModelPct).replace('.', ',')}% req` : ''}`
+      sub: data.topModels[0]
+        ? `favorit: ${data.topModels[0].name}`
         : 'belum ada pemakaian',
       accent: false,
     },
   ];
-
-  let py = 660;
-  for (const p of panels) {
+  cards.forEach((cd, i) => {
+    const cx = 72 + i * (cardW + 24);
     ctx.fillStyle = panel;
-    drawRoundedRect(ctx, 72, py, W - 144, 150, 20);
+    drawRoundedRect(ctx, cx, cardY, cardW, 150, 20);
     ctx.fill();
     ctx.strokeStyle = hairline;
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Aksen garis elektrik di sisi kiri panel (sama dgn active-nav di web).
-    ctx.fillStyle = p.accent ? C.electric : hairline;
-    ctx.fillRect(72, py + 28, 4, 94);
+    ctx.fillStyle = cd.accent ? C.electric : hairline;
+    ctx.fillRect(cx, cardY + 28, 4, 94);
 
-    setFont(600, 14, true);
+    setFont(600, 13, true);
     ctx.fillStyle = muted;
-    ctx.fillText(p.label, 104, py + 48);
+    ctx.fillText(cd.label, cx + 28, cardY + 46);
 
-    setFont(700, 56);
-    ctx.fillStyle = p.accent ? C.electric : fg;
-    ctx.fillText(p.value, 104, py + 110);
+    setFont(700, 48);
+    ctx.fillStyle = cd.accent ? C.electric : fg;
+    ctx.fillText(cd.value, cx + 28, cardY + 106);
 
-    setFont(400, 18);
+    setFont(400, 16);
     ctx.fillStyle = muted;
-    ctx.fillText(fitText(ctx, p.sub, W - 144 - 64), 104, py + 136);
-    py += 175;
+    ctx.fillText(fitText(ctx, cd.sub, cardW - 56), cx + 28, cardY + 132);
+  });
+
+  // ── Top 3 model dengan persentase bar ──
+  setFont(600, 14, true);
+  ctx.fillStyle = muted;
+  ctx.fillText('TOP MODEL', 72, 792);
+
+  if (data.topModels.length === 0) {
+    setFont(400, 19);
+    ctx.fillStyle = muted;
+    ctx.fillText('Belum ada pemakaian pada periode ini.', 72, 832);
+  } else {
+    const rowH = 84;
+    let ry = 824;
+    for (const m of data.topModels) {
+      setFont(600, 25, true);
+      ctx.fillStyle = fg;
+      ctx.fillText(fitText(ctx, m.name, 560), 72, ry + 28);
+
+      setFont(500, 19, true);
+      ctx.fillStyle = muted;
+      const right = `${pct(m.pct)} · ${compactId(m.requests)} req`;
+      const rw = ctx.measureText(right).width;
+      ctx.fillText(right, W - 72 - rw, ry + 28);
+
+      // Bar: latar hairline penuh, fill electric seproporsi pct.
+      ctx.fillStyle = hairline;
+      drawRoundedRect(ctx, 72, ry + 46, W - 144, 10, 5);
+      ctx.fill();
+      const fillW = Math.max(10, ((W - 144) * Math.min(100, m.pct)) / 100);
+      ctx.fillStyle = C.electric;
+      drawRoundedRect(ctx, 72, ry + 46, fillW, 10, 5);
+      ctx.fill();
+
+      ry += rowH;
+    }
   }
 
   // ── Nilai pemakaian ──
   setFont(600, 14, true);
   ctx.fillStyle = muted;
-  ctx.fillText('NILAI PEMAKAIAN (HARGA RESMI)', 72, 1108);
+  ctx.fillText('NILAI PEMAKAIAN (HARGA RESMI)', 72, 1110);
   setFont(700, 44);
   ctx.fillStyle = fg;
-  ctx.fillText(`Rp${fullId(data.valueIdr)}`, 72, 1158);
+  ctx.fillText(`Rp${fullId(data.valueIdr)}`, 72, 1160);
 
-  // ── Footer ──
+  // ── Footer: teks di KIRI, logo di KANAN — tidak saling menimpa ──
   ctx.strokeStyle = hairline;
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(72, 1212);
-  ctx.lineTo(W - 72, 1212);
+  ctx.moveTo(72, 1206);
+  ctx.lineTo(W - 72, 1206);
   ctx.stroke();
-
-  setFont(400, 16, true);
-  ctx.fillStyle = muted;
-  ctx.fillText(fitText(ctx, email, 560), 72, 1260);
-
-  setFont(700, 24);
-  ctx.fillStyle = fg;
-  ctx.fillText('Mpruy AI', 72, 1300);
 
   setFont(400, 15, true);
   ctx.fillStyle = muted;
-  const tagline = 'ai.mpruy.my.id';
-  const tw = ctx.measureText(tagline).width;
-  ctx.fillText(tagline, W - 72 - tw, 1300);
+  ctx.fillText(fitText(ctx, email, 560), 72, 1254);
+
+  setFont(700, 22);
+  ctx.fillStyle = fg;
+  ctx.fillText('Mpruy AI', 72, 1296);
+  const brandEnd = 72 + ctx.measureText('Mpruy AI').width + 18;
+  setFont(400, 15, true);
+  ctx.fillStyle = muted;
+  // Domain mulai setelah teks brand terukur — tanpa perkiraan lebar.
+  ctx.fillText('ai.mpruy.my.id', brandEnd, 1296);
 }
+
 
 /** Muat logo sekali; resolve tetap dipanggil walau gagal (kartu tanpa glyph). */
 function loadLogo(dark: boolean): Promise<HTMLImageElement | null> {
