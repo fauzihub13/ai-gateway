@@ -26,6 +26,7 @@ interface ModelRow {
   internalName: string;
   displayName: string;
   contextWindow: number;
+  maxOutputTokens: number | null;
   priceInPer1MIdr: number;
   priceOutPer1MIdr: number;
   priceCachedInPer1MIdr: number | null;
@@ -39,6 +40,7 @@ const EMPTY = {
   internalName: '',
   displayName: '',
   contextWindow: 128000,
+  maxOutputTokens: null as number | null,
   priceInPer1MIdr: 4,
   priceOutPer1MIdr: 12,
   priceCachedInPer1MIdr: null as number | null,
@@ -46,6 +48,13 @@ const EMPTY = {
 };
 
 const CAPS = ['stream', 'vision', 'tools', 'jsonMode'] as const;
+
+/** 131072 -> "131k", 1048576 -> "1.0M". Untuk kolom limit di tabel. */
+function fmtCompact(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
+  return String(n);
+}
 
 function getCookie(name: string): string {
   const m = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)$`));
@@ -101,6 +110,7 @@ export default function AdminModelsPage() {
       internalName: m.internalName,
       displayName: m.displayName,
       contextWindow: m.contextWindow,
+      maxOutputTokens: m.maxOutputTokens ?? null,
       priceInPer1MIdr: m.priceInPer1MIdr,
       priceOutPer1MIdr: m.priceOutPer1MIdr,
       priceCachedInPer1MIdr: m.priceCachedInPer1MIdr,
@@ -187,6 +197,17 @@ export default function AdminModelsPage() {
               />
             </div>
             <div className="space-y-2">
+              <Label>Max output tokens</Label>
+              <Input
+                type="number"
+                placeholder="kosong = ikut context window"
+                value={form.maxOutputTokens ?? ''}
+                onChange={(e) =>
+                  setForm({ ...form, maxOutputTokens: e.target.value === '' ? null : Number(e.target.value) })
+                }
+              />
+            </div>
+            <div className="space-y-2">
               <Label>Harga in / 1M (IDR)</Label>
               <Input
                 type="number"
@@ -267,6 +288,9 @@ export default function AdminModelsPage() {
                 <TableCell className="font-medium">{m.publicName}</TableCell>
                 <TableCell>
                   <code className="rounded bg-muted px-1.5 py-0.5 text-xs">{m.internalName}</code>
+                </TableCell>
+                <TableCell className="text-right text-muted-foreground">
+                  {fmtCompact(m.contextWindow)} ctx / {m.maxOutputTokens == null ? '—' : fmtCompact(m.maxOutputTokens)} out
                 </TableCell>
                 <TableCell className="text-right">
                   {formatIdr(m.priceInPer1MIdr)} / {formatIdr(m.priceOutPer1MIdr)} /{' '}

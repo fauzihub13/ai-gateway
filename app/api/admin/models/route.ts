@@ -27,7 +27,7 @@ const CreateSchema = z.object({
   displayName: z.string().min(1).max(80),
   description: z.string().max(500).optional(),
   contextWindow: z.number().int().min(1),
-  maxOutputTokens: z.number().int().min(1).optional(),
+  maxOutputTokens: z.number().int().min(1).nullable().optional(),
   priceInPer1MIdr: z.number().int().min(0),
   priceOutPer1MIdr: z.number().int().min(0),
   priceCachedInPer1MIdr: z.number().int().min(0).nullable().optional(),
@@ -92,28 +92,40 @@ export async function POST(req: Request) {
   }
 }
 
+const PatchSchema = z.object({
+  publicName: z.string().min(1).max(64),
+  displayName: z.string().min(1).max(80).optional(),
+  internalName: z.string().min(1).max(128).optional(),
+  contextWindow: z.number().int().min(1).optional(),
+  maxOutputTokens: z.number().int().min(1).nullable().optional(),
+  priceInPer1MIdr: z.number().int().min(0).optional(),
+  priceOutPer1MIdr: z.number().int().min(0).optional(),
+  priceCachedInPer1MIdr: z.number().int().min(0).nullable().optional(),
+  capabilities: z.record(z.boolean()).optional(),
+  isActive: z.boolean().optional(),
+});
+
 export async function PATCH(req: Request) {
   const requestId = getRequestId(req);
   try {
     const admin = await requireAdmin();
     assertCsrf(req);
-    const body = (await req.json()) as { publicName: string } & Record<string, unknown>;
+    const body = PatchSchema.parse(await req.json());
     const model = await db.model.findUnique({ where: { publicName: body.publicName } });
-    if (!model) throw new InternalError('model_not_found');
+    if (!model) throw new NotFoundError('model_not_found', `Model \`${body.publicName}\` does not exist.`);
 
     const updated = await db.model.update({
       where: { id: model.id },
       data: {
-        displayName: body.displayName as string | undefined,
-        internalName: body.internalName as string | undefined,
-        priceInPer1MIdr: body.priceInPer1MIdr as number | undefined,
-        priceOutPer1MIdr: body.priceOutPer1MIdr as number | undefined,
-        priceCachedInPer1MIdr:
-          body.priceCachedInPer1MIdr === undefined
-            ? undefined
-            : (body.priceCachedInPer1MIdr as number | null),
-        capabilities: body.capabilities as object | undefined,
-        isActive: body.isActive as boolean | undefined,
+        displayName: body.displayName,
+        internalName: body.internalName,
+        contextWindow: body.contextWindow,
+        maxOutputTokens: body.maxOutputTokens,
+        priceInPer1MIdr: body.priceInPer1MIdr,
+        priceOutPer1MIdr: body.priceOutPer1MIdr,
+        priceCachedInPer1MIdr: body.priceCachedInPer1MIdr,
+        capabilities: body.capabilities,
+        isActive: body.isActive,
         deprecatedAt: body.isActive === false ? new Date() : undefined,
       },
     });
