@@ -33,6 +33,7 @@ import {
 // ── Warna brand (selaras globals.css) ──────────────────────────────────────
 const C = {
   electric: '#1E4DFF',
+  electricSoft: '#5D7FFF',
   ink: '#0A0A0A',
   paper: '#FBFBFB',
   hairline: '#E5E7EB',
@@ -93,9 +94,9 @@ function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number):
  *
  * Layout (1080×1350, margin 72):
  *   header    : periode (eyebrow) + judul "Mpruy AI Overview"
- *   hero      : TOKEN DIPROSES (angka terbesar) + in/out + total request
- *   row 2     : dua card — CACHE HIT | MODEL DIPAKAI
- *   top model : 3 baris nama + persentase bar
+ *   hero      : TOKEN DIPROSES (angka terbesar, gradient) + in/out
+ *   row card  : 3 card — TOTAL REQUEST | CACHE HIT | MODEL DIPAKAI
+ *   top model : 3 baris nama + persentase bar gradient
  *   bawah     : nilai pemakaian + footer (teks kiri, logo kanan — bebas tabrakan)
  */
 function renderCard(
@@ -153,13 +154,16 @@ function renderCard(
   ctx.fillStyle = fg;
   ctx.fillText('Mpruy AI Overview', 72, 170);
 
-  // ── Hero: TOKEN DIPROSES (angka terbesar di kartu) ──
+  // ── Hero: TOKEN DIPROSES (angka terbesar) — fill gradient electric ──
   setFont(600, 15, true);
   ctx.fillStyle = muted;
   ctx.fillText('TOKEN DIPROSES', 72, 302);
 
+  const heroGrad = ctx.createLinearGradient(0, 336, 0, 436);
+  heroGrad.addColorStop(0, C.electric);
+  heroGrad.addColorStop(1, C.electricSoft);
   setFont(700, 122);
-  ctx.fillStyle = C.electric;
+  ctx.fillStyle = heroGrad;
   ctx.fillText(compactId(data.totalTokens), 72, 428);
 
   setFont(400, 20);
@@ -170,52 +174,60 @@ function renderCard(
     472,
   );
 
-  setFont(500, 18, true);
-  ctx.fillStyle = muted;
-  ctx.fillText(`${fullId(data.requests)} total request`, 72, 518);
+  // ── Row card: TOTAL REQUEST | CACHE HIT | MODEL DIPAKAI ──
+  // Satu row, tiga card sama lebar, tanpa aksen samping — bersih.
+  const cardW = (W - 144 - 48) / 3; // 288
+  const cardY = 540;
+  const boxGrad = ctx.createLinearGradient(0, cardY, 0, cardY + 160);
+  boxGrad.addColorStop(0, dark ? 'rgba(30,77,255,0.16)' : 'rgba(30,77,255,0.10)');
+  boxGrad.addColorStop(1, dark ? 'rgba(30,77,255,0.02)' : 'rgba(30,77,255,0.015)');
 
-  // ── Row 2: dua card — CACHE HIT | MODEL DIPAKAI ──
-  const cardW = (W - 144 - 24) / 2; // 456
-  const cardY = 568;
-  const cards: Array<{ label: string; value: string; sub: string; accent: boolean }> = [
+  const cards: Array<{ label: string; value: string; sub: string; glow: boolean }> = [
+    {
+      label: 'TOTAL REQUEST',
+      value: fullId(data.requests),
+      sub: 'sepanjang periode',
+      glow: false,
+    },
     {
       label: 'CACHE HIT',
       value: data.cachedHitPct == null ? '—' : pct(data.cachedHitPct),
-      sub: `${compactId(data.cachedPromptTokens)} token dari cache`,
-      accent: data.cachedHitPct != null && data.cachedHitPct > 0,
+      sub: `${compactId(data.cachedPromptTokens)} dari cache`,
+      glow: data.cachedHitPct != null && data.cachedHitPct > 0,
     },
     {
       label: 'MODEL DIPAKAI',
       value: String(data.distinctModels),
-      sub: data.topModels[0]
-        ? `favorit: ${data.topModels[0].name}`
-        : 'belum ada pemakaian',
-      accent: false,
+      sub: data.topModels[0] ? `favorit: ${data.topModels[0].name}` : 'belum ada pemakaian',
+      glow: false,
     },
   ];
   cards.forEach((cd, i) => {
     const cx = 72 + i * (cardW + 24);
+    // Latar: panel + lapisan gradient electric tipis (card cache sedikit lebih terlihat).
     ctx.fillStyle = panel;
-    drawRoundedRect(ctx, cx, cardY, cardW, 150, 20);
+    drawRoundedRect(ctx, cx, cardY, cardW, 160, 20);
     ctx.fill();
+    if (cd.glow) {
+      ctx.fillStyle = boxGrad;
+      drawRoundedRect(ctx, cx, cardY, cardW, 160, 20);
+      ctx.fill();
+    }
     ctx.strokeStyle = hairline;
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    ctx.fillStyle = cd.accent ? C.electric : hairline;
-    ctx.fillRect(cx, cardY + 28, 4, 94);
-
-    setFont(600, 13, true);
+    setFont(600, 16, true);
     ctx.fillStyle = muted;
-    ctx.fillText(cd.label, cx + 28, cardY + 46);
+    ctx.fillText(cd.label, cx + 28, cardY + 52);
 
-    setFont(700, 48);
-    ctx.fillStyle = cd.accent ? C.electric : fg;
-    ctx.fillText(cd.value, cx + 28, cardY + 106);
+    setFont(700, 52);
+    ctx.fillStyle = cd.glow ? C.electric : fg;
+    ctx.fillText(cd.value, cx + 28, cardY + 112);
 
     setFont(400, 16);
     ctx.fillStyle = muted;
-    ctx.fillText(fitText(ctx, cd.sub, cardW - 56), cx + 28, cardY + 132);
+    ctx.fillText(fitText(ctx, cd.sub, cardW - 52), cx + 28, cardY + 138);
   });
 
   // ── Top 3 model dengan persentase bar ──
@@ -229,9 +241,13 @@ function renderCard(
     ctx.fillText('Belum ada pemakaian pada periode ini.', 72, 832);
   } else {
     const rowH = 84;
+    const barGrad = ctx.createLinearGradient(72, 0, W - 72, 0);
+    barGrad.addColorStop(0, C.electric);
+    barGrad.addColorStop(1, C.electricSoft);
     let ry = 824;
     for (const m of data.topModels) {
-      setFont(600, 25, true);
+      // Weight 500 — menonjol tanpa terlalu tebal.
+      setFont(500, 25, true);
       ctx.fillStyle = fg;
       ctx.fillText(fitText(ctx, m.name, 560), 72, ry + 28);
 
@@ -241,12 +257,12 @@ function renderCard(
       const rw = ctx.measureText(right).width;
       ctx.fillText(right, W - 72 - rw, ry + 28);
 
-      // Bar: latar hairline penuh, fill electric seproporsi pct.
+      // Bar: latar hairline penuh, fill gradient electric seproporsi pct.
       ctx.fillStyle = hairline;
       drawRoundedRect(ctx, 72, ry + 46, W - 144, 10, 5);
       ctx.fill();
       const fillW = Math.max(10, ((W - 144) * Math.min(100, m.pct)) / 100);
-      ctx.fillStyle = C.electric;
+      ctx.fillStyle = barGrad;
       drawRoundedRect(ctx, 72, ry + 46, fillW, 10, 5);
       ctx.fill();
 
@@ -308,6 +324,7 @@ export function UsageShareCard({ email }: { email: string }) {
   const [copied, setCopied] = useState(false);
   const [shared, setShared] = useState(false);
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -446,8 +463,8 @@ export function UsageShareCard({ email }: { email: string }) {
           </CardContent>
         </Card>
       ) : data ? (
-        <Card className="mx-auto w-full max-w-lg overflow-hidden p-0">
-          <CardContent className="p-0">
+        <Card className="group relative mx-auto w-full max-w-lg overflow-hidden p-0">
+          <CardContent className="relative p-0">
             <canvas
               ref={canvasRef}
               width={W * SCALE}
@@ -455,6 +472,17 @@ export function UsageShareCard({ email }: { email: string }) {
               className="block h-auto w-full"
               aria-label="Kartu ringkasan pemakaian Mpruy AI"
             />
+            {/* Tombol unduh menempel di kartu: selalu terlihat di mobile,
+                muncul saat hover di desktop (group-hover). */}
+            <Button
+              size="sm"
+              onClick={download}
+              disabled={loading}
+              className="absolute right-3 top-3 opacity-100 shadow-lift backdrop-blur transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Unduh
+            </Button>
           </CardContent>
         </Card>
       ) : null}
