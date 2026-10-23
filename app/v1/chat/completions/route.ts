@@ -18,7 +18,7 @@ import {
 import { settleUsage, computeCostBreakdown } from '@/lib/billing';
 import { estimatePromptTokens, estimateTokens, promptToText } from '@/lib/tokens';
 import { toErrorResponse, BadRequestError, InternalError, UpstreamTimeoutError } from '@/lib/errors';
-import { mapUpstreamError } from '@/lib/upstream';
+import { mapUpstreamError, tryHealMaxTokens } from '@/lib/upstream';
 import { getRequestId, getClientIp, json } from '@/lib/http';
 
 export const runtime = 'nodejs';
@@ -140,7 +140,7 @@ export async function POST(req: Request) {
     const promptText = promptToText(body.messages);
 
     const upstreamBody = { ...limited, model: ctx.model.internalName, stream: wantsStream };
-    const upstreamStart = Date.now();
+    let upstreamStart = Date.now();
 
     // ── Idle-based abort (bukan total timeout) ─────────────────────────────
     // Timeout total memutus task panjang walau model masih aktif mengeluarkan
@@ -177,6 +177,48 @@ export async function POST(req: Request) {
         throw new InternalError('upstream_timeout');
       }
       throw new InternalError('upstream_unavailable');
+    }
+
+    // ── Self-heal `max_tokens` (satu kali percobaan) ────────────────────────
+    // Bila row Model kurang update (maxOutputTokens lebih besar dari limit
+    // output provider sebenarnya), provider menjawab 400 max_tokens_exceeded
+    // beserta angka limit di pesannya. Kita parse, clamp, dan retry SEKALI —
+    // semuanya sebelum header terkirim, jadi klien tidak pernah melihat 400.
+    // Perbaikan permanen tetap di data: set maxOutputTokens row Model sesuai
+    // (lihat warning `[heal]` di log).
+    if (!upstream.ok && upstream.status === 400) {
+      const heal = await tryHealMaxTokens(upstream, upstreamBody, {
+        model: ctx.model.internalName,
+        requestId,
+      });
+      if (heal.body) {
+        resetIdle();
+        try {
+          upstream = await nineRouterFetch('/v1/chat/completions', {
+            method: 'POST',
+            body: JSON.stringify(heal.body),
+            signal: ac.signal,
+          });
+          upstreamStart = Date.now();
+        } catch (e: unknown) {
+          clearIdle();
+          const reason = ac.signal.reason;
+          const idle = ac.signal.aborted && reason instanceof Error && reason.message === 'upstream_idle_timeout';
+          if (idle) throw new UpstreamTimeoutError();
+          if (e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
+            throw new InternalError('upstream_timeout');
+          }
+          throw new InternalError('upstream_unavailable');
+        }
+      } else if (heal.raw != null) {
+        // Body 400 asli sudah terkonsumsi saat parse. Rekonstruksi supaya
+        // `mapUpstreamError` tetap bisa membaca `error.code`.
+        upstream = new Response(heal.raw, {
+          status: upstream.status,
+          statusText: upstream.statusText,
+          headers: upstream.headers,
+        });
+      }
     }
 
     if (!upstream.ok) {
