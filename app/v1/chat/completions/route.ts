@@ -120,26 +120,31 @@ export async function POST(req: Request) {
 
     ctx = await preflight(req, { endpoint: 'chat.completions', modelName: body.model, ip });
     assertCapabilities(ctx.model, body);
-    const limited = enforceModelLimits(ctx.model, body);
+    // Limit berbasis row Model berlaku untuk request USER. Ke upstream,
+    // `max_tokens` hanya diteruskan bila user mengirimnya eksplisit (lihat
+    // enforceModelLimits — gateway tidak mengarang default lagi).
+    const { upstreamBody: limitedBody, promptTokens: estPrompt, requestedMaxTokens } = enforceModelLimits(
+      ctx.model,
+      body,
+    );
 
     // Gerbang limit per-key dicek SEKARANG (sebelum upstream), bukan tengah stream.
-    // Estimasi memakai `max_tokens` EKSPLISIT dari klien, bukan default yang
-    // diresolusi `enforceModelLimits`. Default bisa sebesar kapasitas model
-    // (131k token) sehingga estimasi akan menolak request yang sebenarnya wajar;
-    // `settle` tetap merekam biaya aktual. SUBSCRIPTION tidak memotong saldo →
-    // charged 0, gerbang key otomatis lolos.
+    // Estimasi memakai `max_tokens` EKSPLISIT klien (`requestedMaxTokens`); user
+    // tidak mengirim → 0, karena tidak ada default buatan gateway lagi. `settle`
+    // tetap merekam biaya aktual. SUBSCRIPTION tidak memotong saldo → charged 0,
+    // gerbang key otomatis lolos.
     const estimate = computeCostBreakdown({
       model: ctx.model,
       plan: ctx.plan,
-      promptTokens: estimatePromptTokens(limited.messages),
-      completionTokens: body.max_tokens ?? 0,
+      promptTokens: estPrompt,
+      completionTokens: requestedMaxTokens ?? 0,
     });
     await assertKeyPeriodLimit(ctx, estimate.chargedIdr);
 
     const wantsStream = body.stream === true;
     const promptText = promptToText(body.messages);
 
-    const upstreamBody = { ...limited, model: ctx.model.internalName, stream: wantsStream };
+    const upstreamBody = { ...limitedBody, model: ctx.model.internalName, stream: wantsStream };
     let upstreamStart = Date.now();
 
     // ── Idle-based abort (bukan total timeout) ─────────────────────────────

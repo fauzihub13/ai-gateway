@@ -38,19 +38,18 @@ export interface HealLogContext {
 }
 
 /**
- * Self-heal `max_tokens` yang melebihi limit output provider sebenarnya.
+ * Self-heal `max_tokens` eksplisit yang ditolak provider.
  *
- * Default `max_tokens` dihitung dari baris Model (contextWindow − prompt).
- * Bila metadata baris Model tertinggal dari provider (limit output asli lebih
- * kecil, mis. 384k padahalkita clamp ke 512k), upstream menjawab 400
- * `max_tokens_exceeded` lengkap dengan angka limit di pesannya. Fungsi ini
- * membaca jawaban error tersebut dan menyiapkan body retry dengan
- * `max_tokens` tepat pada limit — callers melakukan fetch ulang SEKALI,
+ * `max_tokens` HANYA berasal dari user (gateway tidak meng-inject default —
+ * lihat `enforceModelLimits`). Bila provider menolak nilai itu (di atas limit
+ * output sebenarnya yang tidak tercatat di row Model), error 400 menyebut
+ * angka limit di pesannya. Fungsi ini membaca angka itu dan menyiapkan body
+ * retry dengan `max_tokens` tepat pada limit — caller fetch ulang SEKALI,
  * semuanya sebelum header terkirim sehingga klien tak pernah melihat 400.
  *
- * Heal TIDAK berlaku bila: kode error tidak menyangkut `max_tokens`, angka
- * limit tidak terbaca dari pesan, `max_tokens` klien memang di bawah limit
- * (berarti masalahnya lain), atau limit terbaca tidak valid.
+ * Heal TIDAK berlaku bila: error bukan soal `max_tokens`, angka limit tidak
+ * terbaca, user tidak mengirim `max_tokens`, nilai user sudah ≤ limit
+ * (penolakan karena hal lain), atau limit terbaca tidak valid.
  */
 export async function tryHealMaxTokens<T extends { max_tokens?: number }>(
   res: Response,
