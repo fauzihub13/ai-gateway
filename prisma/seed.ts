@@ -6,10 +6,11 @@ const db = new PrismaClient();
 async function main() {
   const plans = [
     // Plan gratis adalah tier default untuk user baru (lihat src/lib/plans.ts).
-    { name: 'free', displayName: 'Free', markup: 1, rpmLimit: 100, monthlyTokenLimit: 20_000_000, monthlyPriceIdr: 0 },
-    // Plan berbayar: dibeli user dari saldo (30 hari), bukan tagihan berulang.
-    // Harga di sini contoh; ubah lewat /admin/plans.
-    { name: 'pro', displayName: 'Pro', markup: 1.2, rpmLimit: 300, monthlyTokenLimit: 100_000_000, monthlyPriceIdr: 100_000 },
+    // Mode PAYG: model gratis tetap bisa dipakai walau saldo 0.
+    { name: 'free', displayName: 'Free', markup: 1, rpmLimit: 100, monthlyTokenLimit: 20_000_000, monthlyPriceIdr: 0, periodDays: 30, billingMode: 'PAYG' as const },
+    // Plan berbayar: dibeli user dari saldo, bukan tagihan berulang.
+    // Harga & periodDays di sini contoh; ubah lewat /admin/plans.
+    { name: 'pro', displayName: 'Pro', markup: 1.2, rpmLimit: 300, monthlyTokenLimit: 100_000_000, monthlyPriceIdr: 100_000, periodDays: 30, billingMode: 'SUBSCRIPTION' as const },
   ];
   for (const p of plans) {
     await db.plan.upsert({ where: { name: p.name }, create: p, update: p });

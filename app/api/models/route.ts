@@ -20,7 +20,7 @@ export async function GET(req: Request) {
     const models = planModels
       .map((pm) => pm.model)
       .filter((m) => m.isActive)
-      .map((m) => publicModelView(m, user.plan));
+      .map((m) => publicModelView(m));
 
     return json({ models }, 200, { 'x-request-id': requestId });
   } catch (err) {

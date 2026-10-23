@@ -4,8 +4,15 @@ import { extractBearer, hashApiKey, looksLikeApiKey } from './apikey';
 import { resolveModel, type ModelCapabilities } from './model-mapping';
 import { estimatePromptTokens } from './tokens';
 import { getBalance, isFreeModel } from './billing';
+import { ensureQuotaPeriod } from './subscription';
 import { enforceRateLimitsSafe, type RateHeaders } from './ratelimit';
-import { UnauthorizedError, InsufficientBalanceError, TooManyRequestsError, BadRequestError } from './errors';
+import {
+  UnauthorizedError,
+  InsufficientBalanceError,
+  TooManyRequestsError,
+  BadRequestError,
+  PlanExpiredError,
+} from './errors';
 import type { ApiKey, Plan, Model } from '@prisma/client';
 
 type ResolvedModel = Omit<Model, 'capabilities'> & { capabilities: ModelCapabilities };
@@ -17,6 +24,12 @@ export interface AuthContext {
   plan: Plan;
   planId: string;
   keyModels: string[] | null;
+  /** Masa aktif plan berbayar; null = gratis / tanpa expiry. */
+  planExpiresAt: Date | null;
+  /** Awal periode kuota berjalan (tanggal beli/perpanjang terakhir). */
+  planStartedAt: Date | null;
+  /** Total kuota token periode berjalan; null = tanpa kuota. */
+  planTokenQuota: number | null;
 }
 
 export async function authenticateApiKey(req: Request): Promise<AuthContext> {
@@ -32,9 +45,9 @@ export async function authenticateApiKey(req: Request): Promise<AuthContext> {
   if (key.user.status === 'SUSPENDED') throw new UnauthorizedError('account_suspended', 'Account suspended.');
   if (key.user.status !== 'ACTIVE') throw new UnauthorizedError();
 
-  // Tidak ada auto-downgrade di jalur request: plan hanya berubah bila admin
-  // menurunkannya manual dari dashboard. `planExpiresAt` yang lewat tanggal
-  // tidak mengubah akses sampai admin mengambil tindakan.
+  // Plan yang lewat masa aktif TIDAK diturunkan otomatis di sini (tidak ada
+  // auto-downgrade). Penolakan terjadi di `assertPlanActive` pada preflight,
+  // dan plan tetap menempel sampai admin menurunkannya manual.
   void db.apiKey
     .update({ where: { id: key.id }, data: { lastUsedAt: new Date() } })
     .catch(() => undefined);
@@ -46,6 +59,9 @@ export async function authenticateApiKey(req: Request): Promise<AuthContext> {
     plan: key.user.plan,
     planId: key.user.planId,
     keyModels: key.scope === 'MODELS' ? key.allowedModels : null,
+    planExpiresAt: key.user.planExpiresAt,
+    planStartedAt: key.user.planStartedAt,
+    planTokenQuota: key.user.planTokenQuota,
   };
 }
 
@@ -55,49 +71,89 @@ export interface PreflightContext extends AuthContext {
 }
 
 /**
- * Tolak request hanya bila saldo <= 0 DAN model berbayar.
- * Model gratis (harga efektif 0) tetap bisa dipakai walau saldo 0 — biayanya 0.
+ * Gerbang masa aktif plan. Plan berbayar yang lewat `planExpiresAt` ditolak
+ * (`plan_expired`) sampai user membeli lagi. Plan gratis (expiry null) lolos.
+ * Plan TIDAK diturunkan otomatis; admin menurunkannya manual bila perlu.
+ */
+export async function assertPlanActive(ctx: AuthContext): Promise<void> {
+  if (!ctx.planExpiresAt) return;
+  if (ctx.planExpiresAt.getTime() <= Date.now()) {
+    throw new PlanExpiredError(
+      'Masa aktif plan sudah habis. Perpanjang dari dashboard untuk memakai API lagi.',
+    );
+  }
+}
+
+/**
+ * Gerbang biaya per request.
+ * - Plan SUBSCRIPTION: tidak memotong saldo — dibatasi kuota token (assertTokenQuota).
+ * - Plan PAYG: saldo harus > 0, kecuali model gratis (harga efektif 0).
  */
 export async function assertBalance(
   userId: string,
-  opts?: { model?: { priceInPer1MIdr: number; priceOutPer1MIdr: number }; plan?: { markup: number } },
+  opts?: {
+    model?: { priceInPer1MIdr: number; priceOutPer1MIdr: number };
+    plan?: { markup: number; billingMode?: string };
+  },
 ): Promise<void> {
+  if (opts?.plan?.billingMode === 'SUBSCRIPTION') return; // tidak pakai saldo
   const free = opts?.model && opts?.plan ? isFreeModel(opts.model, opts.plan) : false;
   if (free) return;
   const balance = await getBalance(userId);
   if (balance <= 0) throw new InsufficientBalanceError();
 }
 
-async function monthTokens(userId: string): Promise<number> {
+/** Token terpakai sejak awal periode kuota berjalan (`planStartedAt`). */
+async function periodTokensUsed(userId: string, startedAt: Date): Promise<number> {
   const agg = await db.usageLog.aggregate({
-    where: { userId, createdAt: { gte: startOfMonth() } },
+    where: { userId, createdAt: { gte: startedAt }, status: { not: 'REJECTED' } },
     _sum: { totalTokens: true },
   });
   return agg._sum.totalTokens ?? 0;
 }
 
-function startOfMonth(): Date {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-}
-
-export async function assertMonthlyQuota(ctx: AuthContext): Promise<void> {
-  if (ctx.plan.monthlyTokenLimit == null) return;
-  const used = await monthTokens(ctx.userId);
-  if (used >= ctx.plan.monthlyTokenLimit) {
-    throw new TooManyRequestsError('quota_exceeded', 'Monthly token quota exceeded.');
+/**
+ * Gerbang kuota token per **periode plan** (`Plan.periodDays` hari, diatur admin).
+ *
+ * - `planTokenQuota` di-set saat beli/perpanjang. `null` = tanpa kuota (PAYG/gratis).
+ * - Beli lagi saat aktif menambah kuota (stack), jadi periode & kuota selalu
+ *   sejajar: keduanya berakhir bersamaan saat `planExpiresAt`.
+ * - Kuota habis → `quota_exceeded` sampai user membeli lagi.
+ */
+export async function assertTokenQuota(ctx: AuthContext): Promise<void> {
+  if (ctx.planTokenQuota == null) return;
+  const startedAt = ctx.planStartedAt ?? ctx.planExpiresAt;
+  if (!startedAt) return;
+  const used = await periodTokensUsed(ctx.userId, startedAt);
+  if (used >= ctx.planTokenQuota) {
+    throw new TooManyRequestsError(
+      'quota_exceeded',
+      'Kuota token periode ini sudah habis. Beli plan lagi untuk menambah kuota.',
+    );
   }
 }
 
-export async function assertKeyMonthlyLimit(ctx: AuthContext, costEstimate: number): Promise<void> {
+/**
+ * Batas belanja per API key dalam **periode plan berjalan** (`planStartedAt`).
+ * Menjumlahkan `chargedIdr` (biaya yang benar-benar dipotong dari saldo), bukan
+ * `costIdr` (harga list) — jadi plan SUBSCRIPTION (charged = 0) otomatis tidak
+ * pernah menyentuh batas ini, sesuai perilaku "tanpa potong saldo".
+ * Estimasi pemakaian dikirim caller lewat `costEstimate` (0 untuk SUBSCRIPTION).
+ */
+export async function assertKeyPeriodLimit(ctx: AuthContext, costEstimate: number): Promise<void> {
   if (ctx.key.monthlyLimitIdr == null) return;
+  const startedAt = ctx.planStartedAt ?? ctx.planExpiresAt ?? undefined;
   const agg = await db.usageLog.aggregate({
-    where: { apiKeyId: ctx.apiKeyId, createdAt: { gte: startOfMonth() }, status: { not: 'REJECTED' } },
-    _sum: { costIdr: true },
+    where: {
+      apiKeyId: ctx.apiKeyId,
+      ...(startedAt ? { createdAt: { gte: startedAt } } : {}),
+      status: { not: 'REJECTED' },
+    },
+    _sum: { chargedIdr: true },
   });
-  const spent = agg._sum.costIdr ?? 0;
+  const spent = agg._sum.chargedIdr ?? 0;
   if (spent + costEstimate > ctx.key.monthlyLimitIdr) {
-    throw new TooManyRequestsError('key_quota_exceeded', 'This API key has reached its monthly spending limit.');
+    throw new TooManyRequestsError('key_quota_exceeded', 'This API key has reached its spending limit for this plan period.');
   }
 }
 
@@ -127,8 +183,18 @@ export async function preflight(
   }
 
   const model = await resolveModel(opts.modelName, auth.planId, auth.keyModels);
+
+  // Kuota plan gratis bergulir per `Plan.periodDays`: pastikan periode berjalan
+  // ada & belum kedaluwarsa sebelum membaca saldo/kuota. Plan berbayar tidak
+  // disentuh (periode dikelola purchasePlan/grantPlan).
+  const period = await ensureQuotaPeriod(auth.userId);
+  auth.planStartedAt = period.planStartedAt;
+  auth.planTokenQuota = period.planTokenQuota;
+
+  // Urutan gerbang: masa aktif → kuota periode → saldo (mode-aware).
+  await assertPlanActive(auth);
+  await assertTokenQuota(auth);
   await assertBalance(auth.userId, { model, plan: auth.plan });
-  await assertMonthlyQuota(auth);
 
   return { ...auth, model, rateHeaders: rate.headers };
 }
@@ -144,7 +210,7 @@ export const ChatBodySchema = z
       .array(
         z.object({
           role: z.enum(['system', 'user', 'assistant', 'tool']),
-          content: z.union([z.string().max(100_000), z.array(z.any()).max(50), z.null()]),
+          content: z.union([z.string(),z.array(z.any()).max(50), z.null()]),
           name: z.string().max(64).optional(),
           tool_call_id: z.string().max(128).optional(),
         }),

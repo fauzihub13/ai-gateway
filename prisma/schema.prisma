@@ -64,6 +64,16 @@ enum TokenType {
   PASSWORD_RESET
 }
 
+/// Cara plan menagih pemakaian.
+/// - PAYG: potong saldo per token (pay-as-you-go) × markup plan. Saldo = pembatas utama.
+/// - SUBSCRIPTION: plan murni/langganan. Sekali beli = `Plan.periodDays` hari + kuota token.
+///   TIDAK potong saldo per request; hanya dibatasi kuota token periode.
+///   Kuota habis → ditolak sampai beli lagi (beli lagi menambah kuota & masa aktif).
+enum PlanBillingMode {
+  PAYG
+  SUBSCRIPTION
+}
+
 model User {
   id              String     @id @default(cuid())
   email           String     @unique
@@ -75,10 +85,15 @@ model User {
   sessionVersion  Int        @default(0)
   planId          String
   plan            Plan       @relation(fields: [planId], references: [id])
-  // Penanda masa aktif plan berbayar; null = plan gratis (tanpa expiry).
-  // Lewat tanggal TIDAK mengubah plan otomatis — hanya ditandai `expired`
-  // di dashboard admin. Penurunan plan dilakukan manual oleh admin.
+  // Masa aktif plan berbayar; null = plan gratis (tanpa expiry). Lewat tanggal
+  // TIDAK mengubah plan otomatis — hanya ditandai `expired`. Penurunan manual admin.
   planExpiresAt   DateTime?  @db.Timestamptz
+  // ── Periode kuota plan ────────────────────────────────────────────────
+  // Awal periode kuota berjalan = tanggal beli/perpanjang terakhir.
+  planStartedAt   DateTime?  @db.Timestamptz
+  // Total kuota token untuk periode berjalan. Beli lagi saat aktif = ditambah
+  // (stack) bersama perpanjangan `planExpiresAt`. null = tanpa kuota (PAYG/gratis).
+  planTokenQuota  Int?
   emailVerifiedAt DateTime?  @db.Timestamptz
   lastLoginAt     DateTime?  @db.Timestamptz
   createdAt       DateTime   @default(now()) @db.Timestamptz
@@ -124,23 +139,23 @@ model ApiKey {
 }
 
 model Model {
-  id               String    @id @default(cuid())
-  publicName       String    @unique
-  internalName     String
-  displayName      String
-  description      String?
-  contextWindow    Int
-  maxOutputTokens  Int?
-  priceInPer1MIdr  Int
-  priceOutPer1MIdr Int
+  id                    String    @id @default(cuid())
+  publicName            String    @unique
+  internalName          String
+  displayName           String
+  description           String?
+  contextWindow         Int
+  maxOutputTokens       Int?
+  priceInPer1MIdr       Int
+  priceOutPer1MIdr      Int
   // Harga input untuk token yang kena cache upstream. null = tidak ada diskon
   // (token cached tetap dihargai priceInPer1MIdr), agar model lama tidak berubah perilakunya.
   priceCachedInPer1MIdr Int?
-  capabilities     Json      @default("{}")
-  isActive         Boolean   @default(true)
-  deprecatedAt     DateTime? @db.Timestamptz
-  createdAt        DateTime  @default(now()) @db.Timestamptz
-  updatedAt        DateTime  @updatedAt @db.Timestamptz
+  capabilities          Json      @default("{}")
+  isActive              Boolean   @default(true)
+  deprecatedAt          DateTime? @db.Timestamptz
+  createdAt             DateTime  @default(now()) @db.Timestamptz
+  updatedAt             DateTime  @updatedAt @db.Timestamptz
 
   plans     PlanModel[]
   usageLogs UsageLog[]
@@ -149,15 +164,22 @@ model Model {
 }
 
 model Plan {
-  id                String   @id @default(cuid())
-  name              String   @unique
+  id                String          @id @default(cuid())
+  name              String          @unique
   displayName       String
-  markup            Float    @default(1.5)
+  markup            Float           @default(1.5)
   rpmLimit          Int
+  // Kuota token per periode 30 hari. Dipakai untuk SUBSCRIPTION (wajib diisi)
+  // dan sebagai batas atas opsional untuk PAYG (null = tanpa kuota).
   monthlyTokenLimit Int?
-  monthlyPriceIdr   Int      @default(0)
-  isActive          Boolean  @default(true)
-  createdAt         DateTime @default(now()) @db.Timestamptz
+  monthlyPriceIdr   Int             @default(0)
+  // Panjang satu periode plan dalam hari (wajib). Dipakai saat beli/perpanjang:
+  // `planExpiresAt = now + periodDays`. Tidak ada default global.
+  periodDays        Int
+  // PAYG = potong saldo per token; SUBSCRIPTION = harga tetap, tanpa potong saldo.
+  billingMode       PlanBillingMode @default(PAYG)
+  isActive          Boolean         @default(true)
+  createdAt         DateTime        @default(now()) @db.Timestamptz
 
   users         User[]
   models        PlanModel[]
@@ -174,27 +196,37 @@ model PlanModel {
 }
 
 model UsageLog {
-  id                String      @id @default(cuid())
-  requestId         String      @unique
-  userId            String
-  user              User        @relation(fields: [userId], references: [id])
-  apiKeyId          String?
-  apiKey            ApiKey?     @relation(fields: [apiKeyId], references: [id])
-  modelId           String
-  model             Model       @relation(fields: [modelId], references: [id])
-  endpoint          String
-  promptTokens      Int         @default(0)
-  completionTokens  Int         @default(0)
+  id                 String      @id @default(cuid())
+  requestId          String      @unique
+  userId             String
+  user               User        @relation(fields: [userId], references: [id])
+  apiKeyId           String?
+  apiKey             ApiKey?     @relation(fields: [apiKeyId], references: [id])
+  modelId            String
+  model              Model       @relation(fields: [modelId], references: [id])
+  endpoint           String
+  promptTokens       Int         @default(0)
+  completionTokens   Int         @default(0)
   // Bagian dari promptTokens yang dilaporkan upstream sebagai cache hit.
-  cachedPromptTokens Int        @default(0)
-  totalTokens       Int         @default(0)
-  costIdr           Int         @default(0)
-  status            UsageStatus
-  streamed          Boolean     @default(false)
-  latencyMs         Int?
-  upstreamLatencyMs Int?
-  errorCode         String?
-  createdAt         DateTime    @default(now()) @db.Timestamptz
+  cachedPromptTokens Int         @default(0)
+  totalTokens        Int         @default(0)
+  // NILAI PEMAKAIAN: harga resmi (official) × token, TANPA markup plan.
+  // Ini angka "kalau bayar langsung ke provider resmi, segini biayanya".
+  costIdr            Int         @default(0)
+  // Yang BENAR-BENAR ditagih ke user.
+  // - PAYG: harga resmi × markup plan.
+  // - SUBSCRIPTION: 0 (sudah dibayar di muka lewat harga plan; dibatasi kuota).
+  chargedIdr         Int         @default(0)
+  // Hemat = (harga resmi × markup) - chargedIdr.
+  // - PAYG: 0 (tidak ada hemat).
+  // - SUBSCRIPTION: sebesar harga retail pemakaian (karena tagih 0).
+  savedIdr           Int         @default(0)
+  status             UsageStatus
+  streamed           Boolean     @default(false)
+  latencyMs          Int?
+  upstreamLatencyMs  Int?
+  errorCode          String?
+  createdAt          DateTime    @default(now()) @db.Timestamptz
 
   @@index([userId, createdAt])
   @@index([modelId, createdAt])
@@ -203,30 +235,30 @@ model UsageLog {
 }
 
 model Transaction {
-  id            String     @id @default(cuid())
-  orderId       String     @unique
+  id            String          @id @default(cuid())
+  orderId       String          @unique
   userId        String
-  user          User       @relation(fields: [userId], references: [id])
+  user          User            @relation(fields: [userId], references: [id])
   // Nominal saldo yang dikreditkan saat PAID.
   amountIdr     Int
-  status        TrxnStatus @default(PENDING)
+  status        TrxnStatus      @default(PENDING)
   provider      PaymentProvider @default(MIDTRANS)
   // QRIS manual: nominal transfer = amountIdr + uniqueCode (1..200), verifikasi oleh admin.
-  uniqueCode    Int        @default(0)
+  uniqueCode    Int             @default(0)
   payAmountIdr  Int?
   qrisPayload   String?
   // Kunci unik sementara: "qris:<payAmountIdr>" selama PENDING, null setelah final.
   // Unik → dua transaksi pending tidak bisa punya nominal bayar sama (tanpa partial index).
-  payAmountKey  String?    @unique
+  payAmountKey  String?         @unique
   method        String?
   snapToken     String?
   redirectUrl   String?
   midtransTxnId String?
-  expiresAt     DateTime?  @db.Timestamptz
-  paidAt        DateTime?  @db.Timestamptz
+  expiresAt     DateTime?       @db.Timestamptz
+  paidAt        DateTime?       @db.Timestamptz
   rawPayload    Json?
-  createdAt     DateTime   @default(now()) @db.Timestamptz
-  updatedAt     DateTime   @updatedAt @db.Timestamptz
+  createdAt     DateTime        @default(now()) @db.Timestamptz
+  updatedAt     DateTime        @updatedAt @db.Timestamptz
 
   @@index([userId, status])
   @@index([userId, createdAt])
@@ -288,19 +320,22 @@ model AppSetting {
 /// `User.planExpiresAt` (murni penanda; penurunan plan manual oleh admin),
 /// bukan lewat tabel ini.
 model Subscription {
-  id         String   @id @default(cuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  planId     String
-  plan       Plan     @relation(fields: [planId], references: [id])
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId      String
+  plan        Plan     @relation(fields: [planId], references: [id])
   // Harga plan yang dibayar saat transaksi (snapshot; harga plan bisa berubah).
-  priceIdr   Int
-  days       Int      @default(30)
+  priceIdr    Int
+  days        Int      @default(30)
+  // Snapshot mode & kuota saat pembelian (plan bisa berubah setelahnya).
+  billingMode String   @default("PAYG")
+  tokenQuota  Int?
   // Saldo terpotong atau admin berikan tanpa potong saldo. BALANCE | ADMIN
-  source     String   @default("BALANCE")
-  startsAt   DateTime @default(now()) @db.Timestamptz
-  expiresAt  DateTime @db.Timestamptz
-  createdAt  DateTime @default(now()) @db.Timestamptz
+  source      String   @default("BALANCE")
+  startsAt    DateTime @default(now()) @db.Timestamptz
+  expiresAt   DateTime @db.Timestamptz
+  createdAt   DateTime @default(now()) @db.Timestamptz
 
   @@index([userId, createdAt])
   @@index([planId])

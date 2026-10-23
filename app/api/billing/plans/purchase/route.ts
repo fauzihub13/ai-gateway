@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { db } from '@/lib/db';
 import { requireUser, assertCsrf } from '@/lib/auth';
-import { purchasePlan, toPlanView, PLAN_PERIOD_DAYS } from '@/lib/subscription';
+import { purchasePlan, toPlanView } from '@/lib/subscription';
 import { toErrorResponse, BadRequestError } from '@/lib/errors';
 import { getRequestId, json } from '@/lib/http';
 
@@ -33,7 +33,7 @@ export async function POST(req: Request) {
       {
         ok: true,
         plan: toPlanView(row),
-        days: PLAN_PERIOD_DAYS,
+        days: result.subscription.days,
         priceIdr: result.subscription.priceIdr,
         balance: result.balanceAfter,
         planExpiresAt: result.planExpiresAt.toISOString(),

@@ -7,7 +7,7 @@ Sitemap, wireframe tiap halaman, komponen reusable, design system, responsive, a
 ## 1. Prinsip UX
 
 1. **Time-to-first-key < 3 menit** — onboarding tanpa friksi.
-2. **Transparansi harga** — user lihat harga final (sudah termasuk markup) sebelum pakai.
+2. **Transparansi harga** — user lihat **harga resmi provider** (dasar estimasi "nilai pemakaian") dan cara plan menagih (PAYG = resmi × markup; SUBSCRIPTION = tanpa potong saldo, dibatasi kuota) sebelum pakai.
 3. **Playground sebelum integrasi** — coba model tanpa tulis kode.
 4. **Copy-paste friendly** — snippet siap tempel (curl, JS, Python).
 5. **State jelas** — loading/empty/error tidak pernah ambigu.
@@ -93,16 +93,17 @@ Sitemap, wireframe tiap halaman, komponen reusable, design system, responsive, a
 │  Pilih plan sesuai kebutuhan                                   │
 │                                                                │
 │  Kartu plan dirender dari tabel Plan (aktif), urut harga.      │
-│  Saat ini hanya satu plan:                                     │
-│  ┌─ Free ─────┐                                                │
-│  │ Rp0        │                                                │
-│  │ 100 req/mnt│                                                │
-│  │ model mimo │                                                │
-│  │ 20jt tok/bl│                                                │
-│  │ [Pilih]    │                                                │
-│  └────────────┘                                                │
+│  Contoh:                                                       │
+│  ┌─ Free ─────┐  ┌─ Pro ──────┐                               │
+│  │ Gratis     │  │ Rp100.000  │                               │
+│  │ 100 req/mnt│  │ 300 req/mnt│                               │
+│  │ 20jt tok   │  │ 100jt tok  │                               │
+│  │ PAYG       │  │ SUBSCRIPTION                               │
+│  │ [Default]  │  │ [Pilih]    │                               │
+│  └────────────┘  └────────────┘                               │
 │                                                                │
-│  Tabel harga per model (harga final, sudah termasuk markup)    │
+│  Tabel harga per model = HARGA RESMI provider (tanpa markup).  │
+│  Dipakai untuk estimasi "nilai pemakaian", bukan tagihan.      │
 │  Model | Input/1M | Output/1M | Konteks                       │
 └──────────────────────────────────────────────────────────────┘
 ```

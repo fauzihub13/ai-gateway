@@ -80,7 +80,10 @@ Lihat [03-FLOW-LOGIC.md §1.5](./03-FLOW-LOGIC.md).
 | status | UserStatus | not null, default `PENDING_EMAIL` | enum |
 | balance | Int | not null, default 0 | Rupiah bulat |
 | planId | String | FK → Plan | plan aktif (satu sumber kebenaran) |
-| planExpiresAt | DateTime? | | batas masa aktif plan berbayar; `NULL` = plan gratis tanpa expiry |
+| planExpiresAt | DateTime? | | batas masa aktif plan berbayar; `NULL` = plan tanpa expiry (gratis) |
+| planStartedAt | DateTime? | | awal periode kuota berjalan (tanggal beli/perpanjang terakhir) |
+| planTokenQuota | Int? | | total kuota token periode berjalan; `NULL` = tanpa kuota |
+| sessionVersion | Int | not null, default 0 | naikkan untuk memaksa logout semua sesi user |
 | emailVerifiedAt | DateTime? | | |
 | lastLoginAt | DateTime? | | |
 | createdAt | DateTime | not null | |
@@ -89,11 +92,13 @@ Lihat [03-FLOW-LOGIC.md §1.5](./03-FLOW-LOGIC.md).
 
 Index: `email` (unique), `status`, `role`, `planExpiresAt` (dipakai dashboard admin untuk menandai plan yang lewat masa aktif).
 
-**Aturan bisnis `planExpiresAt`:**
+**Aturan bisnis masa aktif (`planExpiresAt`) & periode kuota (`planStartedAt`, `planTokenQuota`):**
 
-- Plan berbayar dibeli untuk 30 hari (`PLAN_PERIOD_DAYS`). Saat beli, `planExpiresAt = now() + 30 hari`.
-- Plan gratis (`free`) selalu `planExpiresAt = NULL` — tidak pernah kedaluwarsa.
-- Bila `planExpiresAt <= now()`, plan **tidak berubah otomatis**. Dashboard menandainya `expired: true` dan admin memutuskan kapan user diturunkan.
+- Satu pembelian plan = satu periode sepanjang `Plan.periodDays` hari (diatur admin per plan, bukan konstanta global). Saat beli: `planExpiresAt = basis + periodDays`.
+- Plan tanpa harga (`monthlyPriceIdr = 0`) selalu punya batas **kuota bergulir**: bila `planStartedAt` kosong atau sudah lewat `periodDays`, periode di-reset dari sekarang dan `planTokenQuota` diisi dari `Plan.monthlyTokenLimit` (lihat `ensureQuotaPeriod()` di [`src/lib/subscription.ts`](../src/lib/subscription.ts)).
+- **Beli lagi saat plan yang sama masih aktif** → **stack**: `planExpiresAt += periodDays` dan `planTokenQuota += Plan.monthlyTokenLimit`. `planStartedAt` **tidak** direset supaya pemakaian & masa aktif tetap sejajar.
+- **Beli tier berbeda, atau membeli setelah expired** → reset periode dari sekarang, kuota = `Plan.monthlyTokenLimit`.
+- Bila `planExpiresAt <= now()` → **request ditolak** (`plan_expired`, HTTP 402) sampai user membeli lagi. Plan **tidak** diturunkan otomatis; dashboard menandai `expired: true` dan admin menurunkannya manual.
 - Penurunan plan **manual** oleh admin: `POST /api/admin/users/:id/plan` → `grantPlan()` (tanpa potong saldo, tercatat di `Subscription` + `AdminAuditLog`). **Tidak ada cron maupun auto-downgrade di jalur request.**
 - `User.planId` tetap satu-satunya sumber kebenaran plan aktif. Tabel `Subscription` hanya riwayat, **tidak** dipakai untuk mengecek validitas plan.
 
@@ -110,7 +115,7 @@ Index: `email` (unique), `status`, `role`, `planExpiresAt` (dipakai dashboard ad
 | scope | KeyScope | not null, default `FULL` | FULL / MODELS |
 | allowedModels | String[] | default [] | public model names (bila scope=MODELS) |
 | rpmLimit | Int? | | override rate limit per key |
-| monthlyLimitIdr | Int? | | batas belanja per bulan (opsional) |
+| monthlyLimitIdr | Int? | | batas belanja key per **periode plan berjalan**; dihitung dari `chargedIdr` (lihat [10-BILLING-USAGE.md](./10-BILLING-USAGE.md)) |
 | status | KeyStatus | not null, default `ACTIVE` | ACTIVE/REVOKED/EXPIRED |
 | expiresAt | DateTime? | | |
 | lastUsedAt | DateTime? | | |
@@ -130,8 +135,8 @@ Index: `keyHash` (unique), `userId`, `status`.
 | description | String? | | |
 | contextWindow | Int | not null | token |
 | maxOutputTokens | Int? | | |
-| priceInPer1MIdr | Int | not null | harga dasar per 1 juta input (IDR) |
-| priceOutPer1MIdr | Int | not null | harga dasar per 1 juta output (IDR) |
+| priceInPer1MIdr | Int | not null | **harga resmi provider** per 1 juta input (IDR) |
+| priceOutPer1MIdr | Int | not null | **harga resmi provider** per 1 juta output (IDR) |
 | priceCachedInPer1MIdr | Int? | | harga input cache-hit; NULL = pakai priceInPer1MIdr |
 | capabilities | Json | default `{}` | `{ stream, vision, tools, jsonMode }` |
 | isActive | Boolean | not null, default true | |
@@ -148,20 +153,25 @@ Index: `publicName` (unique), `isActive`.
 | id | String | PK | |
 | name | String | UNIQUE, not null | mis. `free`, `pro` |
 | displayName | String | not null | |
-| markup | Float | not null, default 1.5 | faktor harga jual per token |
+| markup | Float | not null, default 1.5 | faktor harga jual per token (dipakai menghitung harga retail & besaran "hemat") |
 | rpmLimit | Int | not null | request/menit |
-| monthlyTokenLimit | Int? | | null = unlimited |
-| monthlyPriceIdr | Int | not null, default 0 | **harga beli plan per 30 hari** (0 = gratis / tidak bisa dibeli) |
+| monthlyTokenLimit | Int? | | kuota token per periode `periodDays`. `NULL` = tanpa kuota — **wajib diisi** bila `billingMode = SUBSCRIPTION` (divalidasi di API) |
+| monthlyPriceIdr | Int | not null, default 0 | **harga beli plan per `periodDays` hari** (0 = gratis / tidak bisa dibeli) |
+| periodDays | Int | not null | panjang satu periode plan (hari) — **wajib diisi per plan**; tidak ada default global |
+| billingMode | PlanBillingMode | not null, default `PAYG` | `PAYG` = potong saldo per token; `SUBSCRIPTION` = kuota token, tanpa potong saldo |
 | isActive | Boolean | not null, default true | plan non-aktif tidak muncul di katalog & tidak bisa dibeli |
 | createdAt | DateTime | not null | |
 
 **Aturan bisnis:**
 
-- `monthlyPriceIdr > 0` → plan berbayar, dibeli user dari **saldo** (`POST /api/billing/plans/purchase`). Tidak ada recurring/tagihan otomatis; satu pembelian = 30 hari.
-- `monthlyPriceIdr = 0` → plan gratis/default, tidak bisa dibeli (`plan_not_purchasable`).
-- Beli plan baru saat plan berbayar lain masih aktif → periode di-reset dari sekarang, sisa hari plan lama **hangus**.
-- Beli plan yang **sama** saat masih aktif → ditolak (`plan_already_active`) supaya user tidak membuang sisa hari tanpa sadar.
-- `markup` berbeda per plan → harga jual per token berbeda meski model sama. Lihat [08-MODEL-MAPPING.md](./08-MODEL-MAPPING.md).
+- **Semua plan berbasis plan**: tiap plan menentukan akses model (`PlanModel`), `rpmLimit`, kuota token, `periodDays`, dan `billingMode` sendiri. Model yang tidak terhubung ke plan → `403 model_not_allowed`.
+- `billingMode = PAYG` → tiap request memotong saldo sebesar `harga resmi × markup`. Saldo = pembatas utama; gerbang `balance <= 0` → 402.
+- `billingMode = SUBSCRIPTION` → **tidak** memotong saldo; dibatasi `monthlyTokenLimit`. Habis → 429 `quota_exceeded`.
+- `monthlyPriceIdr > 0` → plan berbayar, dibeli user dari **saldo** (`POST /api/billing/plans/purchase`). Tidak ada recurring/tagihan otomatis; satu pembelian = `periodDays` hari.
+- `monthlyPriceIdr = 0` → plan gratis/default, tidak bisa dibeli (`plan_not_purchasable`). Kuotanya bergulir otomatis (lihat §3.1).
+- Beli plan yang **sama** saat masih aktif → **stack**: `planExpiresAt += periodDays`, `planTokenQuota += monthlyTokenLimit`, `planStartedAt` tetap. Bukan ditolak.
+- Beli tier **berbeda** saat plan lain masih aktif → periode di-reset dari sekarang (sisa hari plan lama hangus).
+- `markup` berbeda per plan → harga jual per token & besaran "hemat" berbeda meski model sama. Lihat [08-MODEL-MAPPING.md](./08-MODEL-MAPPING.md).
 
 ### 3.5 `PlanModel` (join)
 
@@ -183,8 +193,11 @@ Index: `publicName` (unique), `isActive`.
 | endpoint | String | not null | `chat.completions` dll |
 | promptTokens | Int | not null, default 0 | |
 | completionTokens | Int | not null, default 0 | |
+| cachedPromptTokens | Int | not null, default 0 | bagian promptTokens yang cache-hit |
 | totalTokens | Int | not null, default 0 | |
-| costIdr | Int | not null, default 0 | biaya yang ditagih |
+| costIdr | Int | not null, default 0 | **nilai pemakaian** = harga resmi provider × token, TANPA markup (untuk analitik & label "nilai pemakaian") |
+| chargedIdr | Int | not null, default 0 | yang **benar-benar ditagih** ke saldo: PAYG = resmi × markup; SUBSCRIPTION = 0 |
+| savedIdr | Int | not null, default 0 | **hemat** = (resmi × markup) − `chargedIdr`: PAYG = 0; SUBSCRIPTION = penuh |
 | status | UsageStatus | not null | completed/partial/error/rejected |
 | streamed | Boolean | not null, default false | |
 | latencyMs | Int? | | |
@@ -247,7 +260,9 @@ Append-only. Satu baris = satu pembelian/pemberian plan.
 | userId | String | FK → User, `onDelete: Cascade`, index | |
 | planId | String | FK → Plan, `onDelete: Restrict`, index | |
 | priceIdr | Int | not null | snapshot harga yang dibayar (harga plan bisa berubah) |
-| days | Int | not null, default 30 | panjang periode |
+| days | Int | not null, default 30 | panjang periode saat transaksi |
+| billingMode | String | not null, default `PAYG` | snapshot mode penagihan plan saat transaksi |
+| tokenQuota | Int? | | snapshot kuota token plan saat transaksi |
 | source | String | not null, default `BALANCE` | `BALANCE` (potong saldo) / `ADMIN` (gratis) |
 | startsAt | DateTime | not null, default now | |
 | expiresAt | DateTime | not null | `startsAt + days` |
@@ -257,10 +272,11 @@ Index: `(userId, createdAt)`, `planId`.
 
 **Aturan bisnis:**
 
-- `source = BALANCE` dibuat oleh `purchasePlan()` — satu transaksi DB: potong saldo (guard `balance >= price`) → catat `BalanceLedger(reason=PLAN)` → buat `Subscription` → set `User.planId` + `User.planExpiresAt`.
+- `source = BALANCE` dibuat oleh `purchasePlan()` — satu transaksi DB: potong saldo (guard `balance >= price`) → catat `BalanceLedger(reason=PLAN)` → buat `Subscription` → set `User.planId` + `User.planExpiresAt` + `User.planStartedAt` + `User.planTokenQuota`.
 - `source = ADMIN` dibuat oleh `grantPlan()` — tanpa potong saldo, dipakai untuk kompensasi/hadiah/migrasi manual. `priceIdr = 0`. Juga dicatat di `AdminAuditLog` (`action = user.plan.grant`).
+- **Beli plan yang sama saat masih aktif → stack** (perpanjang): `planExpiresAt += periodDays` dan `planTokenQuota += Plan.monthlyTokenLimit`; ini bukan lagi error. Ganti tier atau beli setelah expired → reset periode.
+- `billingMode`/`tokenQuota` di sini adalah **snapshot historis** untuk audit & invoice; nilai efektif selalu dibaca dari `Plan` + `User`.
 - `expiresAt` di tabel ini **tidak** dipakai untuk cek validitas; yang dipakai `User.planExpiresAt`. Tabel ini murni riwayat & dasar invoice/audit.
-- Tidak ada unique constraint anti-dobel di sini; proteksi dobel ada di transaksi (guard saldo) + aturan `plan_already_active`.
 
 ### 3.10 `VerificationToken`
 
@@ -318,8 +334,10 @@ enum KeyScope    { FULL MODELS }
 enum KeyStatus   { ACTIVE REVOKED EXPIRED }
 enum UsageStatus { COMPLETED PARTIAL ERROR REJECTED }
 enum TrxnStatus  { PENDING PAID FAILED EXPIRED REFUNDED }
-enum LedgerReason{ TOPUP USAGE REFUND ADJUSTMENT }
+enum LedgerReason{ TOPUP USAGE REFUND ADJUSTMENT PLAN }
 enum TokenType   { EMAIL_VERIFY PASSWORD_RESET }
+enum PlanBillingMode { PAYG SUBSCRIPTION }
+enum PaymentProvider { MIDTRANS QRIS_MANUAL }
 
 model User {
   id              String       @id @default(cuid())
@@ -329,8 +347,12 @@ model User {
   role            Role         @default(USER)
   status          UserStatus   @default(PENDING_EMAIL)
   balance         Int          @default(0)
+  sessionVersion  Int          @default(0)
   planId          String
   plan            Plan         @relation(fields: [planId], references: [id])
+  planExpiresAt   DateTime?    @db.Timestamptz
+  planStartedAt   DateTime?    @db.Timestamptz
+  planTokenQuota  Int?
   emailVerifiedAt DateTime?    @db.Timestamptz
   lastLoginAt     DateTime?    @db.Timestamptz
   createdAt       DateTime     @default(now()) @db.Timestamptz
@@ -343,9 +365,11 @@ model User {
   ledger          BalanceLedger[]
   tokens          VerificationToken[]
   audits          AdminAuditLog[]
+  subscriptions   Subscription[]
 
   @@index([status])
   @@index([role])
+  @@index([planExpiresAt])
 }
 
 model ApiKey {
@@ -403,6 +427,8 @@ model Plan {
   rpmLimit          Int
   monthlyTokenLimit Int?
   monthlyPriceIdr   Int      @default(0)
+  periodDays        Int
+  billingMode       PlanBillingMode @default(PAYG)
   isActive          Boolean  @default(true)
   createdAt         DateTime @default(now()) @db.Timestamptz
 
@@ -527,7 +553,9 @@ model AppSetting {
 
 ## 5. Seed data awal
 
-Seeder saat ini membuat **satu plan (`free`)** dan **satu model (`mimo`)**, lalu menautkan `free → semua model`. Admin (`admin@mpruy.ai`) juga ditempatkan di plan `free`. Plan default untuk user baru diatur di [`src/lib/plans.ts`](../src/lib/plans.ts) (env `SIGNUP_PLAN`, default `free`).
+Seeder membuat **dua plan (`free`, `pro`)** dan **satu model (`mimo`)**, lalu menautkan keduanya ke seluruh model yang di-seed. Admin (`admin@mpruy.ai`) ditempatkan di plan `free`. Plan default untuk user baru diatur di [`src/lib/plans.ts`](../src/lib/plans.ts) (env `SIGNUP_PLAN`, default `free`).
+
+Bedanya: `free` memakai mode **PAYG** (potong saldo per token, markup 1×), `pro` memakai mode **SUBSCRIPTION** (kuota token, tanpa potong saldo, markup 1,2×). Keduanya punya `periodDays: 30`.
 
 ```ts
 // prisma/seed.ts
@@ -539,20 +567,25 @@ const db = new PrismaClient();
 async function main() {
   const plans = [
     // Plan gratis adalah tier default untuk user baru (lihat src/lib/plans.ts).
-    { name: 'free', displayName: 'Free', markup: 1, rpmLimit: 100, monthlyTokenLimit: 20_000_000, monthlyPriceIdr: 0 },
+    // Mode PAYG: model gratis tetap bisa dipakai walau saldo 0.
+    { name: 'free', displayName: 'Free', markup: 1, rpmLimit: 100, monthlyTokenLimit: 20_000_000, monthlyPriceIdr: 0, periodDays: 30, billingMode: 'PAYG' as const },
+    // Plan berbayar: dibeli user dari saldo, bukan tagihan berulang.
+    // Harga & periodDays di sini contoh; ubah lewat /admin/plans.
+    { name: 'pro', displayName: 'Pro', markup: 1.2, rpmLimit: 300, monthlyTokenLimit: 100_000_000, monthlyPriceIdr: 100_000, periodDays: 30, billingMode: 'SUBSCRIPTION' as const },
   ];
   for (const p of plans) {
     await db.plan.upsert({ where: { name: p.name }, create: p, update: p });
   }
 
   const models = [
-    { publicName: 'mimo', internalName: 'mimo-free', displayName: 'MiMo', contextWindow: 1_048_576, maxOutputTokens: 131_072, priceInPer1MIdr: 4000, priceOutPer1MIdr: 12000, capabilities: { stream: true, vision: true, tools: true, jsonMode: true } },
+    { publicName: 'mimo', internalName: 'mimo-free', displayName: 'MiMo', contextWindow: 1_048_576, maxOutputTokens: 131_072, priceInPer1MIdr: 4_000, priceOutPer1MIdr: 12_000, capabilities: { stream: true, vision: true, tools: true, jsonMode: true } },
   ];
   for (const m of models) {
     await db.model.upsert({ where: { publicName: m.publicName }, create: m, update: m });
   }
 
   const free = await db.plan.findUniqueOrThrow({ where: { name: 'free' } });
+  const pro = await db.plan.findUniqueOrThrow({ where: { name: 'pro' } });
   const allModels = await db.model.findMany();
 
   const link = async (planId: string, subset?: string[]) => {
@@ -565,8 +598,9 @@ async function main() {
       });
     }
   };
-  // Hanya ada satu plan: free, dengan akses ke seluruh model yang di-seed.
+  // Free akses semua model; pro juga semua model (markup lebih rendah).
   await link(free.id);
+  await link(pro.id);
 
   await db.user.upsert({
     where: { email: 'admin@mpruy.ai' },

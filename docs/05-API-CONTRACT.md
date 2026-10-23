@@ -176,13 +176,15 @@ Berguna untuk SDK/tooling yang memverifikasi key.
 | 400 | `invalid_request_error` | `invalid_request_error` | detail field salah |
 | 400 | `invalid_request_error` | `context_length_exceeded` | "This request exceeds the N-token context window for this model." |
 | 401 | `invalid_request_error` | `invalid_api_key` | "Incorrect API key provided." |
-| 402 | `insufficient_quota` | `insufficient_balance` | "Insufficient balance." (tidak berlaku untuk model gratis) |
+| 402 | `insufficient_quota` | `insufficient_balance` | "Insufficient balance." (hanya plan PAYG; model gratis & SUBSCRIPTION tidak berlaku) |
+| 402 | `insufficient_quota` | `plan_expired` | "Your plan has expired. Purchase a plan to continue." |
 | 403 | `permission_error` | `model_not_allowed` | "You do not have access to model X." |
 | 403 | `permission_error` | `email_not_verified` | "Email not verified. Verify your email before signing in." |
 | 403 | `permission_error` | `account_suspended` | "Your account is suspended." |
 | 404 | `invalid_request_error` | `model_not_found` | "The model X does not exist." |
 | 429 | `rate_limit_error` | `rate_limit_exceeded` | "Rate limit reached..." |
-| 429 | `insufficient_quota` | `quota_exceeded` | "Monthly quota exceeded." |
+| 429 | `insufficient_quota` | `quota_exceeded` | "Plan token quota for this period is exhausted." |
+| 429 | `insufficient_quota` | `key_quota_exceeded` | "This API key has reached its spending limit for this plan period." |
 | 503 | `api_error` | `upstream_unavailable` | "Service temporarily unavailable." |
 | 502 | `api_error` | `upstream_error` | "Upstream provider error." |
 | 500 | `api_error` | `internal_error` | "Internal server error." |
@@ -289,7 +291,7 @@ curl -X POST https://app.mpruy.ai/api/billing/plans/purchase \
 ```json
 {
   "ok": true,
-  "plan": { "name": "pro", "displayName": "Pro", "monthlyPriceIdr": 100000, "rpmLimit": 300, "monthlyTokenLimit": 100000000, "markup": 1.2, "models": ["mimo"] },
+  "plan": { "name": "pro", "displayName": "Pro", "monthlyPriceIdr": 100000, "periodDays": 30, "rpmLimit": 300, "monthlyTokenLimit": 100000000, "billingMode": "SUBSCRIPTION", "markup": 1.2, "models": ["mimo"] },
   "days": 30,
   "priceIdr": 100000,
   "balance": 50000,
@@ -301,11 +303,13 @@ curl -X POST https://app.mpruy.ai/api/billing/plans/purchase \
 |---|---|---|
 | Plan tidak ada / nonaktif | 404 | `plan_not_found` |
 | Plan gratis (harga 0) | 400 | `plan_not_purchasable` |
-| Plan sama masih aktif | 400 | `plan_already_active` |
 | Saldo < harga plan | 402 | `insufficient_balance` |
 | Body invalid | 400 | `invalid_request_error` |
 
-Aturan: sekali bayar = **30 hari**, sisa masa aktif plan lama **hangus** (periode di-reset dari sekarang). Tidak ada recurring — lihat [10-BILLING-USAGE.md](./10-BILLING-USAGE.md).
+Aturan: sekali bayar = satu periode sepanjang **`Plan.periodDays`** (diatur admin per plan).
+Beli plan yang **sama** saat masih aktif → **stack** (masa aktif & kuota ditambah, bukan
+direset). Ganti tier atau beli setelah expired → reset periode dari sekarang. Tidak ada
+recurring — lihat [10-BILLING-USAGE.md](./10-BILLING-USAGE.md).
 
 ### 6.4 Models (user view)
 
@@ -313,7 +317,10 @@ Aturan: sekali bayar = **30 hari**, sisa masa aktif plan lama **hangus** (period
 |---|---|---|
 | GET | `/api/models` | `{ models: [{ publicName, displayName, contextWindow, capabilities, priceInPer1MIdr, priceOutPer1MIdr }] }` |
 
-> Harga yang ditampilkan = harga final untuk plan user (sudah termasuk markup).
+> Harga yang ditampilkan = **harga resmi provider** (official), tanpa markup. Angka ini
+> dipakai untuk **estimasi nilai pemakaian** — bukan harga tagihan. Yang benar-benar ditagih
+> ditentukan mode plan: PAYG = resmi × markup; SUBSCRIPTION = 0 (dibatasi kuota token).
+> Lihat [08-MODEL-MAPPING.md §4](./08-MODEL-MAPPING.md) & [10-BILLING-USAGE.md §2](./10-BILLING-USAGE.md).
 
 ### 6.5 Playground
 
@@ -321,7 +328,9 @@ Aturan: sekali bayar = **30 hari**, sisa masa aktif plan lama **hangus** (period
 |---|---|---|---|
 | POST | `/api/playground/chat` | `{ model, messages, stream }` | Sama seperti `/v1/chat/completions` tapi via session |
 
-> Playground memakai kredit user yang sama (memotong saldo). Ditandai `endpoint = "playground"` di UsageLog.
+> Playground melalui gerbang yang sama: masa aktif plan → kuota token periode → saldo
+> (mode-aware; SUBSCRIPTION tidak memotong saldo). Ditandai `endpoint = "playground"`
+> di UsageLog.
 
 ---
 

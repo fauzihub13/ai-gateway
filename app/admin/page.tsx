@@ -33,10 +33,15 @@ interface Metrics {
   requests: number;
   tokens: number;
   cachedTokens: number;
-  costIdr: number;
+  /** Nilai pemakaian (harga resmi provider). */
+  valueIdr: number;
+  /** Yang benar-benar ditagih ke saldo user. */
+  chargedIdr: number;
+  /** Hemat user (retail − charged). */
+  savedIdr: number;
   errors: number;
   errorRate: number;
-  topModels: Array<{ model: string; requests: number; tokens: number; cost: number }>;
+  topModels: Array<{ model: string; requests: number; tokens: number; value: number; charged: number; saved: number }>;
 }
 
 function errorAccent(rate: number): 'destructive' | 'warning' | 'success' {
@@ -83,9 +88,9 @@ export default function AdminOverview() {
         </Tabs>
       </PageHeader>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {loading && !m ? (
-          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28" />)
+          Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28" />)
         ) : m ? (
           <>
             <StatCard label="Requests" value={formatNumber(m.requests)} icon={Activity} hint={suffix} />
@@ -102,7 +107,19 @@ export default function AdminOverview() {
               hint={`${formatNumber(m.errors)} error`}
               accent={errorAccent(m.errorRate)}
             />
-            <StatCard label="Biaya" value={formatIdr(m.costIdr)} icon={Wallet} accent="success" hint={suffix} />
+            <StatCard
+              label="Nilai pemakaian"
+              value={formatIdr(m.valueIdr)}
+              icon={TrendingUp}
+              hint="Harga resmi provider"
+            />
+            <StatCard
+              label="Ditagih"
+              value={formatIdr(m.chargedIdr)}
+              icon={Wallet}
+              accent="success"
+              hint={`Hemat user ${formatIdr(m.savedIdr)}`}
+            />
           </>
         ) : null}
       </div>
@@ -128,7 +145,8 @@ export default function AdminOverview() {
               <TableHead>Model</TableHead>
               <TableHead className="text-right">Requests</TableHead>
               <TableHead className="text-right">Tokens</TableHead>
-              <TableHead className="text-right">Biaya</TableHead>
+              <TableHead className="text-right">Nilai</TableHead>
+              <TableHead className="text-right">Ditagih</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -146,12 +164,13 @@ export default function AdminOverview() {
                   <TableCell className="font-medium">{t.model}</TableCell>
                   <TableCell className="text-right">{formatNumber(t.requests)}</TableCell>
                   <TableCell className="text-right">{formatNumber(t.tokens)}</TableCell>
-                  <TableCell className="text-right">{formatIdr(t.cost)}</TableCell>
+                  <TableCell className="text-right">{formatIdr(t.value)}</TableCell>
+                  <TableCell className="text-right">{formatIdr(t.charged)}</TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
                   Belum ada data.
                 </TableCell>
               </TableRow>

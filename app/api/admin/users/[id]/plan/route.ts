@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { db } from '@/lib/db';
 import { requireAdmin, assertCsrf } from '@/lib/auth';
-import { grantPlan, PLAN_PERIOD_DAYS } from '@/lib/subscription';
+import { grantPlan } from '@/lib/subscription';
 import { toErrorResponse, BadRequestError } from '@/lib/errors';
 import { getRequestId, getClientIp, json } from '@/lib/http';
 
@@ -11,7 +11,8 @@ export const runtime = 'nodejs';
 // manual). `days = 0` berarti plan diberikan tanpa expiry (khusus plan gratis).
 const Schema = z.object({
   plan: z.string().min(1).max(64),
-  days: z.number().int().min(0).max(3650).default(PLAN_PERIOD_DAYS),
+  // Opsional: override panjang periode. Bila tidak diisi, dipakai `Plan.periodDays`.
+  days: z.number().int().min(0).max(3650).optional(),
   note: z.string().max(200).optional(),
 });
 

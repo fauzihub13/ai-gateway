@@ -451,10 +451,11 @@ export default async function Home() {
           <div className="mb-8 max-w-2xl">
             <Eyebrow>Pricing</Eyebrow>
             <h2 className="mt-4 font-display text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
-              Bayar sesuai pemakaian, dengan plan yang jelas.
+              Satu plan, semua model. Bayar paket, bukan per token.
             </h2>
             <p className="reading mt-4">
-              Setiap plan menentukan akses model, limit rate, dan kuota token bulanan. Harga model mengikuti markup plan.
+              Setiap plan punya akses model, limit rate, dan kuota token sendiri. Harga di tabel model adalah harga
+              resmi provider — dipakai untuk menghitung nilai pemakaian Anda, bukan tagihan tambahan.
             </p>
           </div>
 
@@ -472,7 +473,7 @@ export default async function Home() {
                     {p.monthlyPriceIdr > 0 ? formatIdr(p.monthlyPriceIdr) : 'Gratis'}
                   </span>
                   {p.monthlyPriceIdr > 0 && (
-                    <span className="pb-1 font-mono text-[11px] text-muted-foreground">/bulan</span>
+                    <span className="pb-1 font-mono text-[11px] text-muted-foreground">/ {p.periodDays} hari</span>
                   )}
                 </div>
 
@@ -492,8 +493,10 @@ export default async function Home() {
                     </span>
                   </li>
                   <li className="flex justify-between">
-                    <span className="text-muted-foreground">Markup harga</span>
-                    <span className="tabular font-mono text-xs">×{p.markup}</span>
+                    <span className="text-muted-foreground">Mode</span>
+                    <span className="tabular font-mono text-xs">
+                      {p.billingMode === 'SUBSCRIPTION' ? 'paket' : 'pay-as-you-go'}
+                    </span>
                   </li>
                 </ul>
 

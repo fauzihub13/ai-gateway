@@ -44,26 +44,45 @@ Testing pyramid, tools, coverage, contoh test kritikal path, mocking 9Router & M
 
 ```ts
 import { describe, it, expect } from 'vitest';
-import { computeCost } from '@/lib/billing';
+import { computeCostBreakdown, computeUsageValue, isFreeModel } from '@/lib/billing';
 
-describe('computeCost', () => {
+describe('computeCostBreakdown', () => {
   const model = { priceInPer1MIdr: 4000, priceOutPer1MIdr: 12000 };
-  const plan = { markup: 1 };
+  const payg = { markup: 1.35, billingMode: 'PAYG' };
+  const sub = { markup: 1.35, billingMode: 'SUBSCRIPTION' };
 
-  it('menghitung in+out dengan markup dan ceil', () => {
-    const c = computeCost({ model, plan, promptTokens: 1200, completionTokens: 800 });
-    // (0.0012*4000 + 0.0008*12000) * 1 = 14.4 → 15
-    expect(c).toBe(15);
+  it('PAYG: ditagih = harga resmi × markup, hemat 0', () => {
+    const c = computeCostBreakdown({ model, plan: payg, promptTokens: 1200, completionTokens: 800 });
+    // raw resmi = 4.8 + 9.6 = 14.4 → value 15; 14.4*1.35 = 19.44 → marked 20
+    expect(c.valueIdr).toBe(15);
+    expect(c.markedIdr).toBe(20);
+    expect(c.chargedIdr).toBe(20);
+    expect(c.savedIdr).toBe(0);
   });
 
-  it('ceil ke rupiah untuk pecahan kecil', () => {
-    const c = computeCost({ model, plan, promptTokens: 100, completionTokens: 0 });
-    // 0.0001*4000 = 0.4 → 1
-    expect(c).toBe(1);
+  it('SUBSCRIPTION: ditagih 0, hemat = harga retail penuh', () => {
+    const c = computeCostBreakdown({ model, plan: sub, promptTokens: 1200, completionTokens: 800 });
+    expect(c.valueIdr).toBe(15);
+    expect(c.chargedIdr).toBe(0);
+    expect(c.savedIdr).toBe(20);
   });
 
-  it('nol token → nol biaya', () => {
-    expect(computeCost({ model, plan, promptTokens: 0, completionTokens: 0 })).toBe(0);
+  it('valueIdr tidak terpengaruh markup plan', () => {
+    const cheap = computeCostBreakdown({ model, plan: { markup: 1, billingMode: 'PAYG' }, promptTokens: 1000, completionTokens: 0 });
+    const pricey = computeCostBreakdown({ model, plan: { markup: 3, billingMode: 'PAYG' }, promptTokens: 1000, completionTokens: 0 });
+    expect(cheap.valueIdr).toBe(pricey.valueIdr);
+    expect(pricey.markedIdr).toBeGreaterThan(cheap.markedIdr);
+  });
+
+  it('nol token → semua nol', () => {
+    expect(computeCostBreakdown({ model, plan: payg, promptTokens: 0, completionTokens: 0 }))
+      .toEqual({ valueIdr: 0, markedIdr: 0, chargedIdr: 0, savedIdr: 0 });
+  });
+});
+
+describe('isFreeModel', () => {
+  it('markup 0 → efektif gratis walau harga > 0', () => {
+    expect(isFreeModel({ priceInPer1MIdr: 4000, priceOutPer1MIdr: 12000 }, { markup: 0 })).toBe(true);
   });
 });
 ```

@@ -121,7 +121,7 @@ Multiple keys: **satu user boleh punya banyak key** (mis. per lingkungan: dev/st
 | Field | Fungsi | Bila null |
 |---|---|---|
 | `rpmLimit` | request/menit khusus key ini | pakai limit plan |
-| `monthlyLimitIdr` | batas belanja key per bulan | tanpa batas key (batas user tetap berlaku) |
+| `monthlyLimitIdr` | batas belanja key **per periode plan berjalan** | tanpa batas key (batas user tetap berlaku) |
 | `scope` | `FULL` (semua model plan) / `MODELS` (whitelist) | FULL |
 | `allowedModels` | daftar public model (bila scope=MODELS) | — |
 
@@ -131,9 +131,14 @@ Cek saat request (urutan):
 1. plan mengizinkan model? → else 403 model_not_allowed
 2. scope key: FULL → lanjut; MODELS → model ∈ allowedModels? else 403 model_not_in_key_scope
 3. rate limit key (rpmLimit ?? plan.rpmLimit)
-4. bila monthlyLimitIdr: hitung pemakaian key bulan ini (Redis counter + fallback DB)
+4. bila monthlyLimitIdr: hitung SUM(chargedIdr) key sejak user.planStartedAt
    → lewat batas → 429 key_quota_exceeded
 ```
+
+> Batas dihitung dari **`chargedIdr`** (yang benar-benar dipotong dari saldo), bukan
+> `costIdr` (nilai pemakaian). Konsekuensinya plan **SUBSCRIPTION** (`chargedIdr = 0`)
+> tidak pernah menyentuh batas ini — konsisten dengan "tanpa potong saldo". Lihat
+> [10-BILLING-USAGE.md §8.2](./10-BILLING-USAGE.md).
 
 ---
 

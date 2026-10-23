@@ -13,23 +13,41 @@ const PatchSchema = z.object({
   rpmLimit: z.number().int().min(1).max(100_000).optional(),
   monthlyTokenLimit: z.number().int().min(0).nullable().optional(),
   monthlyPriceIdr: z.number().int().min(0).optional(),
+  /** Panjang periode plan (hari). Per plan, bukan global. */
+  periodDays: z.number().int().min(1).max(3650).optional(),
+  billingMode: z.enum(['PAYG', 'SUBSCRIPTION']).optional(),
   isActive: z.boolean().optional(),
   models: z.array(z.string()).optional(),
 });
 
-const CreateSchema = z.object({
-  name: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(/^[a-z0-9][a-z0-9-]*$/, 'name harus lowercase, huruf/angka/dash (mis. "starter")'),
-  displayName: z.string().min(1).max(80),
-  markup: z.number().min(1).max(10).default(1.5),
-  rpmLimit: z.number().int().min(1).max(100_000).default(60),
-  monthlyTokenLimit: z.number().int().min(0).nullable().optional(),
-  monthlyPriceIdr: z.number().int().min(0).default(0),
-  models: z.array(z.string()).default([]),
-});
+const CreateSchema = z
+  .object({
+    name: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-z0-9][a-z0-9-]*$/, 'name harus lowercase, huruf/angka/dash (mis. "starter")'),
+    displayName: z.string().min(1).max(80),
+    markup: z.number().min(1).max(10).default(1.5),
+    rpmLimit: z.number().int().min(1).max(100_000).default(60),
+    monthlyTokenLimit: z.number().int().min(0).nullable().optional(),
+    monthlyPriceIdr: z.number().int().min(0).default(0),
+    // Panjang periode plan (hari). Wajib — tidak ada default global.
+    periodDays: z.number().int().min(1).max(3650),
+    billingMode: z.enum(['PAYG', 'SUBSCRIPTION']).default('PAYG'),
+    models: z.array(z.string()).default([]),
+  })
+  .superRefine((v, ctx) => {
+    // SUBSCRIPTION tanpa kuota = akses tanpa batas apa pun (tidak dipotong saldo,
+    // tidak dibatasi token). Tolak sejak awal.
+    if (v.billingMode === 'SUBSCRIPTION' && v.monthlyTokenLimit == null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['monthlyTokenLimit'],
+        message: 'Plan SUBSCRIPTION wajib punya kuota token (monthlyTokenLimit).',
+      });
+    }
+  });
 
 export async function GET(req: Request) {
   const requestId = getRequestId(req);
@@ -49,7 +67,8 @@ export async function GET(req: Request) {
         plans: plans.map((p) => ({
           id: p.id, name: p.name, displayName: p.displayName, markup: p.markup,
           rpmLimit: p.rpmLimit, monthlyTokenLimit: p.monthlyTokenLimit,
-          monthlyPriceIdr: p.monthlyPriceIdr, isActive: p.isActive,
+          monthlyPriceIdr: p.monthlyPriceIdr, periodDays: p.periodDays,
+          billingMode: p.billingMode, isActive: p.isActive,
           models: p.models.map((m) => m.model.publicName),
         })),
         allModels,
@@ -72,6 +91,17 @@ export async function PATCH(req: Request) {
     const plan = await db.plan.findUnique({ where: { name: body.name } });
     if (!plan) throw new BadRequestError('invalid_request_error', 'Plan not found.');
 
+    // Validasi hasil akhir (bukan cuma field yang dikirim): SUBSCRIPTION tanpa
+    // kuota = akses tanpa batas (tidak potong saldo, tidak dibatasi token).
+    const nextBillingMode = body.billingMode ?? plan.billingMode;
+    const nextTokenLimit = body.monthlyTokenLimit === undefined ? plan.monthlyTokenLimit : body.monthlyTokenLimit;
+    if (nextBillingMode === 'SUBSCRIPTION' && nextTokenLimit == null) {
+      throw new BadRequestError(
+        'invalid_request_error',
+        'Plan SUBSCRIPTION wajib punya kuota token (monthlyTokenLimit).',
+      );
+    }
+
     await db.$transaction(async (tx) => {
       await tx.plan.update({
         where: { id: plan.id },
@@ -81,6 +111,8 @@ export async function PATCH(req: Request) {
           rpmLimit: body.rpmLimit,
           monthlyTokenLimit: body.monthlyTokenLimit === undefined ? undefined : body.monthlyTokenLimit,
           monthlyPriceIdr: body.monthlyPriceIdr,
+          periodDays: body.periodDays,
+          billingMode: body.billingMode,
           isActive: body.isActive,
         },
       });
@@ -132,6 +164,8 @@ export async function POST(req: Request) {
         rpmLimit: body.rpmLimit,
         monthlyTokenLimit: body.monthlyTokenLimit ?? null,
         monthlyPriceIdr: body.monthlyPriceIdr,
+        periodDays: body.periodDays,
+        billingMode: body.billingMode,
       },
     });
 

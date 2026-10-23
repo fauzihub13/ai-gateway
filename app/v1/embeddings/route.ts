@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { preflight, isRateLimited } from '@/lib/proxy';
 import { nineRouterFetch } from '@/lib/ninerouter';
 import { extractCachedTokens } from '@/lib/stream';
-import { settleUsage, computeCost } from '@/lib/billing';
+import { settleUsage, computeCostBreakdown } from '@/lib/billing';
 import { estimateTokens } from '@/lib/tokens';
 import { toErrorResponse, BadRequestError } from '@/lib/errors';
 import { mapUpstreamError } from '@/lib/upstream';
@@ -50,7 +50,9 @@ export async function POST(req: Request) {
     const cachedPromptTokens = extractCachedTokens(data.usage as Record<string, unknown> | undefined);
     data.usage = { prompt_tokens: promptTokens, total_tokens: totalTokens, prompt_tokens_details: { cached_tokens: cachedPromptTokens } };
 
-    const cost = computeCost({ model: ctx.model, plan: ctx.plan, promptTokens, completionTokens: 0, cachedPromptTokens });
+    const cost = computeCostBreakdown({
+      model: ctx.model, plan: ctx.plan, promptTokens, completionTokens: 0, cachedPromptTokens,
+    });
 
     await settleUsage({
       requestId,
@@ -61,7 +63,9 @@ export async function POST(req: Request) {
       promptTokens,
       completionTokens: 0,
       cachedPromptTokens,
-      costIdr: cost,
+      costIdr: cost.valueIdr,
+      chargedIdr: cost.chargedIdr,
+      savedIdr: cost.savedIdr,
       status: 'COMPLETED',
       streamed: false,
       latencyMs: Date.now() - start,

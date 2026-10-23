@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Wallet, Activity, Coins, TrendingUp, RefreshCw } from 'lucide-react';
+import { Wallet, Activity, Coins, TrendingUp, PiggyBank, RefreshCw } from 'lucide-react';
 import { PageHeader, StatCard } from '@/components/stat-card';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,8 +15,8 @@ import { apiFetch } from '@/lib/client';
 
 interface Overview {
   balance: number;
-  totals: { requests: number; tokens: number; cost: number };
-  items: Array<{ key: string; requests: number; tokens: number; cost: number }>;
+  totals: { requests: number; tokens: number; value: number; charged: number; saved: number };
+  items: Array<{ key: string; requests: number; tokens: number; value: number; charged: number; saved: number }>;
   user?: { email: string; name: string | null; plan: string };
 }
 
@@ -27,7 +27,12 @@ interface LogItem {
   status: 'COMPLETED' | 'PARTIAL' | 'ERROR' | 'REJECTED';
   streamed: boolean;
   totalTokens: number;
+  /** Nilai pemakaian (harga resmi tanpa markup). */
   costIdr: number;
+  /** Yang benar-benar ditagih ke saldo. */
+  chargedIdr: number;
+  /** Hemat user. */
+  savedIdr: number;
   latencyMs: number | null;
   errorCode: string | null;
 }
@@ -90,18 +95,24 @@ export default function DashboardOverview() {
         description={user ? `Selamat datang, ${user.name ?? user.email} · plan ${user.plan}` : undefined}
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {loading ? (
-          Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-28" />)
+          Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28" />)
         ) : (
           <>
             <StatCard label="Saldo" value={formatIdr(data?.balance ?? 0)} icon={Wallet} accent="primary" />
             <StatCard label="Request (30d)" value={formatNumber(data?.totals.requests ?? 0)} icon={Activity} />
             <StatCard label="Token (30d)" value={formatNumber(data?.totals.tokens ?? 0)} icon={Coins} />
             <StatCard
-              label="Biaya (30d)"
-              value={formatIdr(data?.totals.cost ?? 0)}
+              label="Nilai pemakaian (30d)"
+              value={formatIdr(data?.totals.value ?? 0)}
               icon={TrendingUp}
+              hint="Harga resmi provider"
+            />
+            <StatCard
+              label="Hemat (30d)"
+              value={formatIdr(data?.totals.saved ?? 0)}
+              icon={PiggyBank}
               accent="success"
             />
           </>
@@ -163,7 +174,8 @@ export default function DashboardOverview() {
                   <TableHead>Model</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Token</TableHead>
-                  <TableHead className="text-right">Biaya</TableHead>
+                  <TableHead className="text-right">Nilai</TableHead>
+                  <TableHead className="text-right">Hemat</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -183,6 +195,7 @@ export default function DashboardOverview() {
                     </TableCell>
                     <TableCell className="tabular text-right">{formatNumber(l.totalTokens)}</TableCell>
                     <TableCell className="tabular text-right">{formatIdr(l.costIdr)}</TableCell>
+                    <TableCell className="tabular text-right text-success">{formatIdr(l.savedIdr ?? 0)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -194,16 +207,16 @@ export default function DashboardOverview() {
   );
 }
 
-function MiniBar({ items }: { items: Array<{ key: string; cost: number }> }) {
+function MiniBar({ items }: { items: Array<{ key: string; value: number }> }) {
   const recent = items.slice(0, 14);
-  const max = Math.max(1, ...recent.map((i) => i.cost));
+  const max = Math.max(1, ...recent.map((i) => i.value));
   return (
     <div className="flex h-40 items-end gap-1.5">
       {recent.map((i) => (
-        <div key={i.key} className="group relative flex-1" title={`${i.key}: ${formatIdr(i.cost)}`}>
+        <div key={i.key} className="group relative flex-1" title={`${i.key}: ${formatIdr(i.value)}`}>
           <div
             className="w-full rounded-t bg-primary/70 transition-colors group-hover:bg-primary"
-            style={{ height: `${Math.max(4, (i.cost / max) * 140)}px` }}
+            style={{ height: `${Math.max(4, (i.value / max) * 140)}px` }}
           />
         </div>
       ))}

@@ -98,7 +98,7 @@ export default function PlaygroundPage() {
             </Select>
             {selected && (
               <CardDescription className="hidden sm:block">
-                Rp{selected.priceInPer1MIdr}/Rp{selected.priceOutPer1MIdr} per 1M token
+                Nilai resmi: Rp{selected.priceInPer1MIdr}/Rp{selected.priceOutPer1MIdr} per 1M token
               </CardDescription>
             )}
           </div>

@@ -87,7 +87,9 @@ Checklist pre-launch. Semua item wajib tercentang sebelum membuka akses publik.
 ## 7. Business
 
 ```
-[ ] Harga & markup diverifikasi (margin positif tiap model)
+[ ] Harga model = harga resmi provider, diverifikasi per model
+[ ] Markup & mode plan (PAYG/SUBSCRIPTION) diverifikasi (margin positif)
+[ ] Rencana plan (periodDays, kuota token, akses model) sudah final
 [ ] Biaya upstream terkonfirmasi dari 9Router
 [ ] Payment production Midtrans aktif & diuji nominal kecil
 [ ] Invoice/top-up end-to-end diuji

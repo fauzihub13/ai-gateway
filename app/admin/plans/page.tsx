@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -26,6 +27,9 @@ interface Plan {
   rpmLimit: number;
   monthlyTokenLimit: number | null;
   monthlyPriceIdr: number;
+  /** Panjang satu periode plan (hari). Per plan, bukan global. */
+  periodDays: number;
+  billingMode: 'PAYG' | 'SUBSCRIPTION';
   isActive: boolean;
   models: string[];
 }
@@ -42,6 +46,8 @@ const EMPTY = {
   rpmLimit: 60,
   monthlyTokenLimit: '' as number | '',
   monthlyPriceIdr: 0,
+  periodDays: 30,
+  billingMode: 'PAYG' as Plan['billingMode'],
   models: [] as string[],
 };
 
@@ -216,7 +222,7 @@ export default function AdminPlansPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Token / bulan</Label>
+                <Label>Kuota token / periode</Label>
                 <Input
                   type="number"
                   value={form.monthlyTokenLimit}
@@ -227,12 +233,35 @@ export default function AdminPlansPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label>Harga / bulan (IDR)</Label>
+                <Label>Panjang periode (hari)</Label>
+                <Input
+                  type="number"
+                  value={form.periodDays}
+                  onChange={(e) => setForm({ ...form, periodDays: Number(e.target.value) })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Harga / periode (IDR)</Label>
                 <Input
                   type="number"
                   value={form.monthlyPriceIdr}
                   onChange={(e) => setForm({ ...form, monthlyPriceIdr: Number(e.target.value) })}
                 />
+              </div>
+              <div className="space-y-2">
+                <Label>Mode penagihan</Label>
+                <Select
+                  value={form.billingMode}
+                  onValueChange={(v) => setForm({ ...form, billingMode: v as Plan['billingMode'] })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PAYG">PAYG — potong saldo per token</SelectItem>
+                    <SelectItem value="SUBSCRIPTION">SUBSCRIPTION — kuota token, tanpa potong saldo</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -298,7 +327,7 @@ export default function AdminPlansPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Token / bulan</Label>
+                  <Label>Kuota token / periode</Label>
                   <Input
                     type="number"
                     value={p.monthlyTokenLimit ?? ''}
@@ -309,12 +338,35 @@ export default function AdminPlansPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Harga / bulan (IDR)</Label>
+                  <Label>Panjang periode (hari)</Label>
+                  <Input
+                    type="number"
+                    value={p.periodDays}
+                    onChange={(e) => update(p.name, { periodDays: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Harga / periode (IDR)</Label>
                   <Input
                     type="number"
                     value={p.monthlyPriceIdr}
                     onChange={(e) => update(p.name, { monthlyPriceIdr: Number(e.target.value) })}
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label>Mode penagihan</Label>
+                  <Select
+                    value={p.billingMode}
+                    onValueChange={(v) => update(p.name, { billingMode: v as Plan['billingMode'] })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PAYG">PAYG — potong saldo per token</SelectItem>
+                      <SelectItem value="SUBSCRIPTION">SUBSCRIPTION — kuota token</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
 

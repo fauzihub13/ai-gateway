@@ -77,13 +77,31 @@ Form tambah/edit (lihat [08](./08-MODEL-MAPPING.md)). Aksi: aktif/nonaktif, depr
 
 ### 3.5 Plans `/admin/plans`
 
-Ubah markup, rpm, monthlyTokenLimit, monthlyPriceIdr, akses model (matrix plan × model).
+Field yang bisa diatur per plan:
+
+| Field | Arti |
+|---|---|
+| `displayName` | label UI plan |
+| `markup` | faktor harga retail (nilai resmi × markup). PAYG menagih ini; SUBSCRIPTION memakainya sebagai dasar "hemat" |
+| `rpmLimit` | batas request/menit plan |
+| `monthlyTokenLimit` | kuota token **per periode** (bukan bulan kalender). `NULL` = tanpa kuota |
+| `monthlyPriceIdr` | harga beli plan per periode (0 = gratis, tidak bisa dibeli) |
+| `periodDays` | **panjang satu periode plan (hari)** — diatur per plan, wajib diisi |
+| `billingMode` | `PAYG` (potong saldo per token) / `SUBSCRIPTION` (kuota token, tanpa potong saldo) |
+| akses model | matrix plan × model |
+
+Validasi: **`billingMode = SUBSCRIPTION` wajib punya `monthlyTokenLimit`** — kalau tidak,
+plan jadi akses tanpa batas (tidak dipotong saldo & tidak dibatasi token). Ditolak di
+CREATE maupun PATCH dengan `invalid_request_error`.
 
 ```
 Plan × Model matrix (contoh):
               mimo
 free          [x]
 ```
+
+Setiap perubahan plan dicatat di `AdminAuditLog` (`action = plan.create` / `plan.update` /
+`plan.delete`). Plan yang masih dipakai user tidak bisa dihapus (`plan_in_use`).
 
 ### 3.6 Transactions `/admin/transactions`
 

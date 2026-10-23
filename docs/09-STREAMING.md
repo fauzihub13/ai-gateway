@@ -239,10 +239,12 @@ async function onSettle(state: StreamState) {
   if (state.aborted && !state.receivedFirstChunk) return; // tidak ada token → tidak menagih
 
   const usage = state.usage!;
-  const cost = computeCost({
+  // Tiga angka biaya — lihat 10-BILLING-USAGE.md §2.
+  const cost = computeCostBreakdown({
     model: modelRow, plan,
     promptTokens: usage.prompt_tokens,
     completionTokens: usage.completion_tokens,
+    cachedPromptTokens: usage.cachedPromptTokens,
   });
 
   await settleUsage({
@@ -250,7 +252,10 @@ async function onSettle(state: StreamState) {
     endpoint: 'chat.completions',
     promptTokens: usage.prompt_tokens,
     completionTokens: usage.completion_tokens,
-    costIdr: cost,
+    cachedPromptTokens: usage.cachedPromptTokens ?? 0,
+    costIdr: cost.valueIdr,
+    chargedIdr: cost.chargedIdr,
+    savedIdr: cost.savedIdr,
     status: state.finishReason === 'stop' || state.sawDone ? 'COMPLETED' : 'PARTIAL',
     streamed: true,
   });
@@ -283,9 +288,11 @@ export async function POST(req: Request) {
     data.model = publicModel;
     const usage = data.usage ?? { prompt_tokens: estimatePromptTokens(body.messages), completion_tokens: estimateTokens(data.choices?.[0]?.message?.content ?? ''), total_tokens: 0 };
     if (!usage.total_tokens) usage.total_tokens = usage.prompt_tokens + usage.completion_tokens;
+    const cost = computeCostBreakdown({ model: modelRow, plan,
+      promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens });
     await settleUsage({ requestId, userId, apiKeyId, modelId: modelRow.id, endpoint: 'chat.completions',
       promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens,
-      costIdr: computeCost({ model: modelRow, plan, promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens }),
+      costIdr: cost.valueIdr, chargedIdr: cost.chargedIdr, savedIdr: cost.savedIdr,
       status: 'COMPLETED', streamed: false });
     return Response.json(data, { headers: rateLimitHeaders(ctx) });
   }

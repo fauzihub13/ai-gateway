@@ -75,7 +75,12 @@ export interface UsageLogItem {
   completionTokens: number;
   cachedPromptTokens: number;
   totalTokens: number;
+  /** Nilai pemakaian: harga resmi provider × token (tanpa markup). */
   costIdr: number;
+  /** Yang benar-benar ditagih ke saldo (0 untuk SUBSCRIPTION). */
+  chargedIdr: number;
+  /** Hemat = (harga resmi × markup) − charged. 0 untuk PAYG. */
+  savedIdr: number;
   latencyMs: number | null;
   upstreamLatencyMs: number | null;
   errorCode: string | null;
@@ -147,6 +152,8 @@ async function listLogs(
     cachedPromptTokens: l.cachedPromptTokens,
     totalTokens: l.totalTokens,
     costIdr: l.costIdr,
+    chargedIdr: l.chargedIdr,
+    savedIdr: l.savedIdr,
     latencyMs: l.latencyMs,
     upstreamLatencyMs: l.upstreamLatencyMs,
     errorCode: l.errorCode,
@@ -206,7 +213,12 @@ export interface UsageBucket {
   completionTokens: number;
   cachedPromptTokens: number;
   tokens: number;
-  cost: number;
+  /** Nilai pemakaian: harga resmi provider × token (tanpa markup). */
+  value: number;
+  /** Yang benar-benar ditagih ke saldo (0 untuk SUBSCRIPTION). */
+  charged: number;
+  /** Hemat = (harga resmi × markup) − charged. 0 untuk PAYG. */
+  saved: number;
 }
 
 export interface UsageTotals {
@@ -215,7 +227,12 @@ export interface UsageTotals {
   completionTokens: number;
   cachedPromptTokens: number;
   tokens: number;
-  cost: number;
+  /** Lihat `UsageBucket.value`. */
+  value: number;
+  /** Lihat `UsageBucket.charged`. */
+  charged: number;
+  /** Lihat `UsageBucket.saved`. */
+  saved: number;
 }
 
 export interface UsageSummary {
@@ -248,17 +265,36 @@ export interface PerUserUsage {
   completionTokens: number;
   cachedPromptTokens: number;
   tokens: number;
-  cost: number;
+  /** Nilai pemakaian (harga resmi tanpa markup). */
+  value: number;
+  /** Yang benar-benar ditagih ke saldo. */
+  charged: number;
+  /** Hemat user (retail − charged). */
+  saved: number;
 }
 
-/** Agregasi usage per user (admin). Diurutkan dari biaya terbesar. */
+const AGG_SUM = {
+  promptTokens: true,
+  completionTokens: true,
+  cachedPromptTokens: true,
+  totalTokens: true,
+  costIdr: true,
+  chargedIdr: true,
+  savedIdr: true,
+} as const;
+
+/**
+ * Agregasi usage per user (admin). Diurutkan dari **yang ditagih** terbesar —
+ * bukan nilai pemakaian — supaya user PAYG berat muncul di atas, sementara
+ * user SUBSCRIPTION (charged 0) tidak menutupi mereka.
+ */
 export async function summarizeByUser(opts: { from: Date; to: Date; limit?: number }): Promise<PerUserUsage[]> {
   const rows = await db.usageLog.groupBy({
     by: ['userId'],
     where: { createdAt: { gte: opts.from, lte: opts.to }, status: { not: 'REJECTED' } },
     _count: { _all: true },
-    _sum: { promptTokens: true, completionTokens: true, cachedPromptTokens: true, totalTokens: true, costIdr: true },
-    orderBy: { _sum: { costIdr: 'desc' } },
+    _sum: AGG_SUM,
+    orderBy: { _sum: { chargedIdr: 'desc' } },
     take: Math.min(Math.max(opts.limit ?? 100, 1), 500),
   });
 
@@ -276,7 +312,9 @@ export async function summarizeByUser(opts: { from: Date; to: Date; limit?: numb
     completionTokens: r._sum.completionTokens ?? 0,
     cachedPromptTokens: r._sum.cachedPromptTokens ?? 0,
     tokens: r._sum.totalTokens ?? 0,
-    cost: r._sum.costIdr ?? 0,
+    value: r._sum.costIdr ?? 0,
+    charged: r._sum.chargedIdr ?? 0,
+    saved: r._sum.savedIdr ?? 0,
   }));
 }
 
@@ -298,7 +336,7 @@ export async function summarizeUsage(
   const totalsAgg = await db.usageLog.aggregate({
     where,
     _count: { _all: true },
-    _sum: { promptTokens: true, completionTokens: true, cachedPromptTokens: true, totalTokens: true, costIdr: true },
+    _sum: AGG_SUM,
   });
 
   const totals = {
@@ -307,16 +345,10 @@ export async function summarizeUsage(
     completionTokens: totalsAgg._sum.completionTokens ?? 0,
     cachedPromptTokens: totalsAgg._sum.cachedPromptTokens ?? 0,
     tokens: totalsAgg._sum.totalTokens ?? 0,
-    cost: totalsAgg._sum.costIdr ?? 0,
+    value: totalsAgg._sum.costIdr ?? 0,
+    charged: totalsAgg._sum.chargedIdr ?? 0,
+    saved: totalsAgg._sum.savedIdr ?? 0,
   };
-
-  const TOKEN_SUM = {
-    promptTokens: true,
-    completionTokens: true,
-    cachedPromptTokens: true,
-    totalTokens: true,
-    costIdr: true,
-  } as const;
 
   const toBucket = (key: string, count: number, sum: {
     promptTokens: number | null;
@@ -324,6 +356,8 @@ export async function summarizeUsage(
     cachedPromptTokens: number | null;
     totalTokens: number | null;
     costIdr: number | null;
+    chargedIdr: number | null;
+    savedIdr: number | null;
   }): UsageBucket => ({
     key,
     requests: count,
@@ -331,7 +365,10 @@ export async function summarizeUsage(
     completionTokens: sum.completionTokens ?? 0,
     cachedPromptTokens: sum.cachedPromptTokens ?? 0,
     tokens: sum.totalTokens ?? 0,
-    cost: sum.costIdr ?? 0,
+    // `value` = nilai pemakaian (harga resmi) — angka utama untuk user.
+    value: sum.costIdr ?? 0,
+    charged: sum.chargedIdr ?? 0,
+    saved: sum.savedIdr ?? 0,
   });
 
   let items: UsageBucket[] = [];
@@ -341,7 +378,7 @@ export async function summarizeUsage(
       by: ['modelId'],
       where,
       _count: { _all: true },
-      _sum: TOKEN_SUM,
+      _sum: AGG_SUM,
       orderBy: { _sum: { costIdr: 'desc' } },
     });
     const models = await db.model.findMany({
@@ -355,7 +392,7 @@ export async function summarizeUsage(
       by: ['apiKeyId'],
       where,
       _count: { _all: true },
-      _sum: TOKEN_SUM,
+      _sum: AGG_SUM,
       orderBy: { _sum: { costIdr: 'desc' } },
     });
     const ids = rows.map((r) => r.apiKeyId).filter((v): v is string => Boolean(v));
@@ -378,7 +415,9 @@ export async function summarizeUsage(
         completionTokens: bigint | null;
         cachedPromptTokens: bigint | null;
         tokens: bigint | null;
-        cost: bigint | null;
+        value: bigint | null;
+        charged: bigint | null;
+        saved: bigint | null;
       }>
     >(Prisma.sql`
       SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS key,
@@ -387,7 +426,9 @@ export async function summarizeUsage(
              COALESCE(sum("completionTokens"), 0) AS "completionTokens",
              COALESCE(sum("cachedPromptTokens"), 0) AS "cachedPromptTokens",
              COALESCE(sum("totalTokens"), 0) AS tokens,
-             COALESCE(sum("costIdr"), 0) AS cost
+             COALESCE(sum("costIdr"), 0) AS value,
+             COALESCE(sum("chargedIdr"), 0) AS charged,
+             COALESCE(sum("savedIdr"), 0) AS saved
       FROM "UsageLog"
       WHERE "userId" = ${userId}
         AND "createdAt" >= ${opts.from}
@@ -403,7 +444,9 @@ export async function summarizeUsage(
       completionTokens: Number(r.completionTokens ?? 0),
       cachedPromptTokens: Number(r.cachedPromptTokens ?? 0),
       tokens: Number(r.tokens ?? 0),
-      cost: Number(r.cost ?? 0),
+      value: Number(r.value ?? 0),
+      charged: Number(r.charged ?? 0),
+      saved: Number(r.saved ?? 0),
     }));
   }
 

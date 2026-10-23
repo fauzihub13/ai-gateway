@@ -32,9 +32,14 @@ export async function GET(req: Request) {
         completionTokens: a.completionTokens + i.completionTokens,
         cachedPromptTokens: a.cachedPromptTokens + i.cachedPromptTokens,
         tokens: a.tokens + i.tokens,
-        cost: a.cost + i.cost,
+        value: a.value + i.value,
+        charged: a.charged + i.charged,
+        saved: a.saved + i.saved,
       }),
-      { requests: 0, promptTokens: 0, completionTokens: 0, cachedPromptTokens: 0, tokens: 0, cost: 0 },
+      {
+        requests: 0, promptTokens: 0, completionTokens: 0, cachedPromptTokens: 0, tokens: 0,
+        value: 0, charged: 0, saved: 0,
+      },
     );
 
     return json({ scope: 'all', ...range, totals, items }, 200, { 'x-request-id': requestId });

@@ -57,14 +57,21 @@ export async function resolveModel(
   return model;
 }
 
-export function publicModelView(model: Model, plan: Pick<Plan, 'markup'>): PublicModel {
+/**
+ * Tampilan model untuk user. Harga yang dikirim adalah **harga resmi provider**
+ * (tanpa markup) — dipakai semata untuk estimasi "nilai pemakaian" di dashboard.
+ * Yang benar-benar ditagih ditentukan mode plan (PAYG: resmi × markup;
+ * SUBSCRIPTION: 0 / sudah termasuk kuota) — lihat `computeCostBreakdown` di
+ * `src/lib/billing.ts`.
+ */
+export function publicModelView(model: Model): PublicModel {
   const caps = (model.capabilities as ModelCapabilities) ?? {};
   return {
     publicName: model.publicName,
     displayName: model.displayName,
     contextWindow: model.contextWindow,
-    priceInPer1MIdr: Math.ceil(model.priceInPer1MIdr * plan.markup),
-    priceOutPer1MIdr: Math.ceil(model.priceOutPer1MIdr * plan.markup),
+    priceInPer1MIdr: model.priceInPer1MIdr,
+    priceOutPer1MIdr: model.priceOutPer1MIdr,
     capabilities: caps,
   };
 }

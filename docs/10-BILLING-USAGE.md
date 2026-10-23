@@ -16,63 +16,106 @@ Konsep saldo, usage log, kalkulasi biaya, transaksi atomik, idempotency, pencega
 
 ---
 
-## 2. Struktur `UsageLog`
+## 2. Tiga angka biaya (nilai, tagih, hemat)
 
-Tiap request tercatat satu baris (lihat [04-DATABASE-SCHEMA.md](./04-DATABASE-SCHEMA.md)):
+Harga model (`Model.priceInPer1MIdr`, `priceOutPer1MIdr`, `priceCachedInPer1MIdr`)
+adalah **harga resmi provider (official)** — angka yang muncul kalau user bayar
+langsung ke provider. Harga ini **tidak** dipakai untuk menagih; fungsinya
+menghitung **nilai pemakaian**.
+
+Dari situ diturunkan tiga angka per request (semua kolom `UsageLog`):
+
+| Kolom | Arti | PAYG | SUBSCRIPTION |
+|---|---|---|---|
+| `costIdr` | **Nilai pemakaian** = harga resmi × token, tanpa markup | harga resmi | harga resmi |
+| `chargedIdr` | Yang **benar-benar ditagih** ke saldo | resmi × `plan.markup` | **0** |
+| `savedIdr` | **Hemat** = `markedIdr − chargedIdr` | **0** | resmi × `plan.markup` |
+
+`markedIdr` (harga retail = nilai × markup) tidak disimpan sebagai kolom; nilainya
+= `chargedIdr + savedIdr`, dihitung ulang bila perlu.
+
+Struktur `UsageLog` (lihat [04-DATABASE-SCHEMA.md](./04-DATABASE-SCHEMA.md)):
 
 ```
 requestId (unique)  → idempotency
 userId, apiKeyId
 modelId
 endpoint            → chat.completions | embeddings | playground
-promptTokens, completionTokens, totalTokens
-costIdr             → biaya yang ditagih (sudah termasuk markup)
+promptTokens, completionTokens, cachedPromptTokens, totalTokens
+costIdr             → NILAI pemakaian (harga resmi, tanpa markup)
+chargedIdr          → yang dipotong dari saldo (0 untuk SUBSCRIPTION)
+savedIdr            → hemat user
 status              → COMPLETED | PARTIAL | ERROR | REJECTED
 streamed, latencyMs, upstreamLatencyMs, errorCode
 createdAt
 ```
 
-Status: `REJECTED` = ditolak sebelum ke upstream (auth/limit/saldo) → `costIdr=0`. `ERROR` = gagal upstream tanpa token. `PARTIAL` = stream terputus setelah sebagian token.
+Status: `REJECTED` = ditolak sebelum ke upstream (auth/limit/saldo) → semua angka biaya `0`.
+`ERROR` = gagal upstream tanpa token. `PARTIAL` = stream terputus setelah sebagian token.
 
 ---
 
 ## 3. Kalkulasi biaya
 
+Satu fungsi tunggal: `computeCostBreakdown()` di [`src/lib/billing.ts`](../src/lib/billing.ts).
+
 ```ts
-export function computeCost(opts: {
+export interface CostBreakdown {
+  /** Nilai pemakaian dengan harga resmi provider (tanpa markup). */
+  valueIdr: number;
+  /** Harga retail = nilai × markup plan. */
+  markedIdr: number;
+  /** Yang benar-benar ditagih ke saldo (0 untuk SUBSCRIPTION). */
+  chargedIdr: number;
+  /** Hemat = markedIdr − chargedIdr. */
+  savedIdr: number;
+}
+
+/** Biaya resmi mentah (belum dibulatkan), token cached pakai harga cache bila ada. */
+function rawOfficialCost(model: CostModel, t: CostTokens): number {
+  const prompt = Math.max(t.promptTokens, 0);
+  const completion = Math.max(t.completionTokens, 0);
+  const cached = Math.min(Math.max(t.cachedPromptTokens ?? 0, 0), prompt);
+  const nonCached = prompt - cached;
+  const cachedPrice = model.priceCachedInPer1MIdr ?? model.priceInPer1MIdr;
+
+  const inCost = (nonCached / 1_000_000) * model.priceInPer1MIdr;
+  const cachedCost = (cached / 1_000_000) * cachedPrice;
+  const outCost = (completion / 1_000_000) * model.priceOutPer1MIdr;
+  return inCost + cachedCost + outCost;
+}
+
+export function computeCostBreakdown(opts: {
   model: { priceInPer1MIdr: number; priceOutPer1MIdr: number; priceCachedInPer1MIdr?: number | null };
-  plan: { markup: number };
+  plan: { markup: number; billingMode: string };
   promptTokens: number;
   completionTokens: number;
   cachedPromptTokens?: number;
-}): number {
-  const { model, plan, promptTokens, completionTokens } = opts;
-
-  // Token cache hit dihargai priceCachedInPer1MIdr bila ada; null = tanpa diskon.
-  const cached = Math.min(Math.max(opts.cachedPromptTokens ?? 0, 0), Math.max(promptTokens, 0));
-  const nonCached = Math.max(promptTokens - cached, 0);
-  const cachedInPrice = model.priceCachedInPer1MIdr ?? model.priceInPer1MIdr;
-
-  const inCost = (nonCached / 1_000_000) * model.priceInPer1MIdr
-               + (cached / 1_000_000) * cachedInPrice;
-  const outCost = (completionTokens / 1_000_000) * model.priceOutPer1MIdr;
-  const raw = (inCost + outCost) * plan.markup;
-  return Math.ceil(raw); // ceil ke rupiah, arah aman (kami)
+}): CostBreakdown {
+  const valueIdr = Math.ceil(rawOfficialCost(opts.model, tokens));
+  const markedIdr = Math.ceil(rawOfficialCost(opts.model, tokens) * opts.plan.markup);
+  const chargedIdr = opts.plan.billingMode === 'SUBSCRIPTION' ? 0 : markedIdr;
+  const savedIdr = Math.max(0, markedIdr - chargedIdr);
+  return { valueIdr, markedIdr, chargedIdr, savedIdr };
 }
 ```
 
-Harga disimpan **per 1 juta token** (`priceInPer1MIdr`, `priceOutPer1MIdr`, `priceCachedInPer1MIdr`),
-sama dengan satuan yang dipakai provider upstream.
+Harga disimpan **per 1 juta token**, sama dengan satuan provider upstream.
 
-Contoh: mimo (Rp4.000/1M in, Rp12.000/1M out), plan free (×1), 1.200 prompt + 800 completion:
+Contoh: mimo (resmi Rp4.000/1M in, Rp12.000/1M out), 1.200 prompt + 800 completion:
 ```
-inCost  = 1200 / 1_000_000 * 4000  = 4.8
-outCost = 800  / 1_000_000 * 12000 = 9.6
-raw = (4.8 + 9.6) * 1 = 14.4 → ceil = Rp15
+raw resmi = 1200/1M × 4000 + 800/1M × 12000 = 4.8 + 9.6 = 14.4
+
+PAYG  markup 1.35 : value = ceil(14.4)      = Rp15
+                    marked = ceil(14.4×1.35) = Rp20 → charged=20, saved=0
+SUBSCRIPTION      : value = Rp15, marked = Rp20 → charged=0, saved=20
 ```
 
-> Perhatikan: `Math.ceil` per request membuat request kecil (mis. 100 token) tetap kena Rp1.
+> `Math.ceil` per request membuat request kecil (mis. 100 token) tetap kena Rp1.
 > Itu disengaja — biaya minimum satu request adalah Rp1.
+
+`isFreeModel` (model dengan harga efektif 0) tetap dipakai agar user PAYG bersaldo 0
+boleh memakai model gratis: `priceInPer1MIdr * markup <= 0 && priceOutPer1MIdr * markup <= 0`.
 
 ---
 
@@ -85,13 +128,22 @@ Satu transaksi DB. Saldo **boleh minus** (overdraft) — kebijakan: request yang
 export async function settleUsage(input: {
   requestId: string; userId: string; apiKeyId?: string; modelId: string;
   endpoint: string; promptTokens: number; completionTokens: number;
-  costIdr: number; status: 'COMPLETED' | 'PARTIAL' | 'ERROR' | 'REJECTED';
+  /** Nilai pemakaian (harga resmi, tanpa markup). */
+  costIdr: number;
+  /** Yang benar-benar ditagih ke saldo (0 untuk SUBSCRIPTION). Default = costIdr. */
+  chargedIdr?: number;
+  /** Hemat = retail − charged. Default 0. */
+  savedIdr?: number;
+  status: 'COMPLETED' | 'PARTIAL' | 'ERROR' | 'REJECTED';
   streamed?: boolean; latencyMs?: number; errorCode?: string;
 }) {
+  const charged = Math.max(0, input.chargedIdr ?? input.costIdr);
+  const saved = Math.max(0, input.savedIdr ?? 0);
+
   return db.$transaction(async (tx) => {
     // 1. idempotency: insert usage dulu
     const existing = await tx.usageLog.findUnique({ where: { requestId: input.requestId } });
-    if (existing) return { duplicated: true, usage: existing };
+    if (existing) return { duplicated: true, usageId: existing.id };
 
     const usage = await tx.usageLog.create({
       data: {
@@ -103,7 +155,9 @@ export async function settleUsage(input: {
         promptTokens: input.promptTokens,
         completionTokens: input.completionTokens,
         totalTokens: input.promptTokens + input.completionTokens,
-        costIdr: input.costIdr,
+        costIdr: input.costIdr,     // nilai pemakaian (analitik)
+        chargedIdr: charged,        // yang dipotong dari saldo
+        savedIdr: saved,            // hemat user
         status: input.status,
         streamed: input.streamed ?? false,
         latencyMs: input.latencyMs,
@@ -111,11 +165,11 @@ export async function settleUsage(input: {
       },
     });
 
-    // 2. potong saldo atomic (hanya bila cost > 0). Saldo boleh minus — task in-flight selesai.
-    if (input.costIdr > 0) {
+    // 2. potong saldo atomic (hanya bila charged > 0). Saldo boleh minus — task in-flight selesai.
+    if (charged > 0) {
       await tx.$executeRaw`
         UPDATE "User"
-        SET balance = balance - ${input.costIdr}, "updatedAt" = now()
+        SET balance = balance - ${charged}, "updatedAt" = now()
         WHERE id = ${input.userId}
       `;
 
@@ -123,14 +177,14 @@ export async function settleUsage(input: {
       const u = await tx.user.findUniqueOrThrow({ where: { id: input.userId }, select: { balance: true } });
       await tx.balanceLedger.create({
         data: {
-          userId: input.userId, deltaIdr: -input.costIdr, balanceAfter: u.balance,
+          userId: input.userId, deltaIdr: -charged, balanceAfter: u.balance,
           reason: 'USAGE', referenceId: usage.id,
         },
       });
     }
 
     // 4. update lastUsedAt key (di luar transaksi idealnya)
-    return { duplicated: false, usage };
+    return { duplicated: false, usageId: usage.id };
   });
 }
 ```
@@ -153,27 +207,38 @@ Request masuk (sama user, paralel):
   4. Blokir berikutnya: preflight `balance <= 0` menolak request BARU (bukan memotong yang jalan)
 ```
 
-Prinsip: **gerbang di awal, bukan di tengah.** Semua limit (auth, rate, saldo, quota bulanan, limit per-key, context window) dicek di preflight sebelum upstream. Sekali request/stream jalan, ia selesai; biaya direkam di settle (best-effort). Request berikutnya yang diblokir.
+Prinsip: **gerbang di awal, bukan di tengah.** Semua limit (auth, rate, saldo, kuota periode plan, limit per-key, context window) dicek di preflight sebelum upstream. Sekali request/stream jalan, ia selesai; biaya direkam di settle (best-effort). Request berikutnya yang diblokir.
 
 Pre-flight check sebelum ke upstream (optimistik, mencegah kirim request yang pasti gagal):
 
 ```ts
-async function assertBalance(
+// src/lib/proxy.ts — urutan gerbang di preflight()
+await assertPlanActive(auth);                    // planExpiresAt lewat → 402 plan_expired
+await assertTokenQuota(auth);                    // kuota token periode habis → 429 quota_exceeded
+await assertBalance(auth.userId, { model, plan: auth.plan }); // saldo ≤ 0 → 402 (kecuali SUBSCRIPTION / model gratis)
+```
+
+`assertBalance` **mode-aware** — plan SUBSCRIPTION tidak pernah menyentuh saldo:
+
+```ts
+export async function assertBalance(
   userId: string,
-  model: { priceInPer1MIdr: number; priceOutPer1MIdr: number },
-  plan: { markup: number },
-) {
-  // Model gratis (harga efektif 0) boleh dipakai walau saldo 0 — biayanya 0.
-  if (isFreeModel(model, plan)) return;
-  const cached = await redis.get<number>(`balance:${userId}`);
-  const balance = cached ?? (await db.user.findUniqueOrThrow({ where: { id: userId }, select: { balance: true } })).balance;
+  opts?: {
+    model?: { priceInPer1MIdr: number; priceOutPer1MIdr: number };
+    plan?: { markup: number; billingMode?: string };
+  },
+): Promise<void> {
+  if (opts?.plan?.billingMode === 'SUBSCRIPTION') return; // tidak pakai saldo
+  const free = opts?.model && opts?.plan ? isFreeModel(opts.model, opts.plan) : false;
+  if (free) return;
+  const balance = await getBalance(userId);
   if (balance <= 0) throw new InsufficientBalanceError();
 }
 ```
 
 `isFreeModel` (lihat implementasi di `src/lib/billing.ts`): `priceInPer1MIdr * plan.markup <= 0 && priceOutPer1MIdr * plan.markup <= 0`.
 
-Catatan: karena biaya final tak diketahui sebelum respons, pre-flight hanya mencegah saldo 0 pada model berbayar. Penagihan sebenarnya di settle. Bila saldo tidak cukup saat settle → tagih 0 dan catat `ERROR` (bukan saldo negatif). Untuk model gratis, `costIdr = 0` sehingga settle tidak memotong saldo dan tidak menulis `BalanceLedger`.
+Catatan: karena biaya final tak diketahui sebelum respons, pre-flight hanya mencegah saldo 0 pada model berbayar PAYG. Penagihan sebenarnya di settle. Saldo boleh minus satu request (overdraft) supaya task in-flight selesai; request berikutnya diblokir. Untuk plan SUBSCRIPTION, `chargedIdr = 0` sehingga settle tidak memotong saldo dan tidak menulis `BalanceLedger`.
 
 ---
 
@@ -184,8 +249,12 @@ Catatan: karena biaya final tak diketahui sebelum respons, pre-flight hanya menc
 ```
 Admin/user ajukan refund → buat BalanceLedger { deltaIdr: +X, reason: REFUND, referenceId: usageId }
                         → tambah User.balance
-                        → tandai UsageLog (mis. errorCode: refunded, costIdr tetap untuk audit)
+                        → tandai UsageLog (mis. errorCode: refunded, costIdr & chargedIdr tetap untuk audit)
 ```
+
+> Refund memakai `chargedIdr` (yang benar-benar dipotong), bukan `costIdr` (nilai
+> pemakaian). Untuk plan SUBSCRIPTION tidak ada saldo yang dipotong, jadi tidak
+> ada yang perlu direfund.
 
 ### 6.2 Adjustment (koreksi manual)
 
@@ -212,66 +281,139 @@ Semua refund/adjustment wajib beralasan & tercatat di audit admin.
 ```sql
 SELECT date_trunc('day', "createdAt") AS day,
        SUM("totalTokens") AS tokens,
-       SUM("costIdr")     AS cost,
+       SUM("costIdr")     AS value,    -- nilai pemakaian (harga resmi)
+       SUM("chargedIdr")  AS charged,  -- yang ditagih ke saldo
+       SUM("savedIdr")    AS saved,    -- hemat user
        COUNT(*)           AS requests
 FROM "UsageLog"
 WHERE "userId" = $1
   AND "createdAt" >= now() - interval '30 days'
-  AND status IN ('COMPLETED','PARTIAL')
+  AND status <> 'REJECTED'
 GROUP BY 1 ORDER BY 1;
 ```
 
 ### 7.2 Per model
 
 ```sql
-SELECT m."publicName", COUNT(*) req, SUM(l."costIdr") cost
+SELECT m."publicName",
+       COUNT(*) AS req,
+       SUM(l."costIdr")    AS value,
+       SUM(l."chargedIdr") AS charged
 FROM "UsageLog" l JOIN "Model" m ON m.id = l."modelId"
-WHERE l."userId" = $1 AND l."createdAt" >= date_trunc('month', now())
-GROUP BY 1 ORDER BY cost DESC;
+WHERE l."userId" = $1 AND l."createdAt" >= now() - interval '30 days'
+GROUP BY 1 ORDER BY value DESC;
 ```
 
 ### 7.3 Per API key
 
 ```sql
-SELECT k.prefix, k.name, COUNT(*) req, SUM(l."costIdr") cost
+SELECT k.prefix, k.name,
+       COUNT(*) AS req,
+       SUM(l."costIdr")    AS value,
+       SUM(l."chargedIdr") AS charged
 FROM "UsageLog" l JOIN "ApiKey" k ON k.id = l."apiKeyId"
-WHERE l."userId" = $1 AND l."createdAt" >= date_trunc('month', now())
-GROUP BY 1,2 ORDER BY cost DESC;
+WHERE l."userId" = $1 AND l."createdAt" >= now() - interval '30 days'
+GROUP BY 1,2 ORDER BY charged DESC;
 ```
 
-### 7.4 Summary bulan ini
+### 7.4 Summary 30 hari (tiga angka biaya)
 
 ```sql
-SELECT COUNT(*) requests, SUM("totalTokens") tokens, SUM("costIdr") cost
+SELECT COUNT(*) AS requests,
+       SUM("totalTokens") AS tokens,
+       SUM("costIdr")     AS value,
+       SUM("chargedIdr")  AS charged,
+       SUM("savedIdr")    AS saved
 FROM "UsageLog"
 WHERE "userId" = $1 AND "createdAt" >= date_trunc('month', now());
 ```
 
 ---
 
-## 8. Quota & limit
+## 8. Kuota & limit
 
-Dua lapis:
+Tiga lapis, semuanya dicek di preflight (bukan di tengah request):
 
-1. **Saldo (pay-as-you-go):** habis → 402.
-2. **Quota bulanan plan (subscription):** `monthlyTokenLimit` per bulan kalender.
+| Lapis | Basis | Habis → |
+|---|---|---|
+| **Masa aktif plan** | `User.planExpiresAt` | 402 `plan_expired` |
+| **Kuota token periode** | `User.planTokenQuota` vs pemakaian sejak `User.planStartedAt` | 429 `quota_exceeded` |
+| **Saldo** (hanya PAYG) | `User.balance > 0` | 402 `insufficient_balance` |
+
+### 8.1 Kuota token per **periode plan**
+
+Kuota dihitung **per periode plan** (`Plan.periodDays` hari sejak tanggal
+beli/perpanjang) — **bukan** per bulan kalender:
 
 ```
-pemakaian_bulan = SUM(totalTokens) Where userId AND createdAt >= date_trunc('month', now())
-bila pemakaian_bulan >= plan.monthlyTokenLimit → 429 quota_exceeded
+pemakaian_periode = SUM(totalTokens)
+  WHERE userId = $1
+    AND createdAt >= user.planStartedAt
+    AND status <> 'REJECTED'
+
+bila pemakaian_periode >= user.planTokenQuota → 429 quota_exceeded
 ```
 
-Cache counter bulanan di Redis (`quota:{userId}:{YYYY-MM}`), di-increment per settle, TTL akhir bulan. Fallback ke DB saat cache absen.
+- `planTokenQuota` di-set saat beli/perpanjang. `NULL` = plan tanpa kuota.
+- Beli lagi saat plan sama masih aktif → kuota **ditambah** (stack), jadi
+  pemakaian tetap dihitung dari `planStartedAt` awal dan tidak pernah reset diam-diam.
+- Kuota habis → beli plan lagi untuk menambah kuota & masa aktif.
 
-Per-key `monthlyLimitIdr`: batas belanja key per bulan → 429 `key_quota_exceeded`.
+**Plan tanpa expiry (gratis) & berkuota:** periode bergulir otomatis. Bila
+`planStartedAt` kosong atau sudah lewat `Plan.periodDays`, periode di-reset dari
+sekarang dan kuota diisi ulang dari `Plan.monthlyTokenLimit`. Logika ada di
+`ensureQuotaPeriod()` ([`src/lib/subscription.ts`](../src/lib/subscription.ts)),
+dipanggil dari preflight & dashboard dengan guard DB (`updateMany where planStartedAt = nilai lama`)
+supaya dua request paralel tidak saling menimpa.
+
+**Plan berbayar tidak ikut bergulir otomatis** — kalau ikut, user akan dapat
+kuota gratis setelah masa aktifnya habis. Periode plan berbayar hanya berubah
+lewat pembelian (`purchasePlan`) atau pemberian admin (`grantPlan`).
+
+### 8.2 Limit belanja per API key
+
+`ApiKey.monthlyLimitIdr` = batas belanja key **per periode plan berjalan**.
+
+Dihitung dari `chargedIdr` (yang benar-benar dipotong dari saldo), bukan
+`costIdr`:
+
+```sql
+SELECT COALESCE(SUM("chargedIdr"), 0)
+FROM "UsageLog"
+WHERE "apiKeyId" = $1
+  AND "createdAt" >= user.planStartedAt
+  AND status <> 'REJECTED';
+```
+
+Konsekuensi: plan SUBSCRIPTION (`chargedIdr = 0`) otomatis tidak pernah
+menyentuh batas ini — konsisten dengan "tanpa potong saldo". Terlampaui → 429
+`key_quota_exceeded`.
+
+> **Catatan implementasi:** counter di Redis belum dipakai di fase ini — kuota
+> & limit dihitung langsung dari agregat `UsageLog` di Postgres. Bila volume
+> membesar, tambahkan counter Redis (`quota:{userId}:{periodStart}`) yang
+> di-increment per settle dengan fallback ke DB.
 
 ---
 
 ## 9. Invoice
 
 - **Top-up:** invoice dibuat saat `Transaction` PAID. `GET /api/billing/invoices/:id` → JSON/PDF.
-- **Bulanan (subscription):** job awal bulan generate invoice ringkas (langganan + usage), kirim via Resend.
-- Nomor invoice: `INV-{YYYYMM}-{seq}`. Simpan nomor & snapshot total di `Transaction`/tabel invoice (fase awal: derive dari Transaction).
+- **Pembelian plan:** satu baris `Subscription` = satu invoice (snapshot `priceIdr`, `days`, `billingMode`, `tokenQuota`).
+- Nomor invoice: `INV-{YYYYMM}-{seq}`. Simpan nomor & snapshot total di `Transaction`/tabel invoice (fase awal: derive dari Transaction/Subscription).
+
+Contoh JSON invoice pembelian plan:
+
+```json
+{
+  "invoiceNumber": "INV-202408-000123",
+  "issuedAt": "2024-08-01T00:00:00Z",
+  "user": { "email": "user@example.com", "name": "Budi" },
+  "items": [{ "description": "Plan Pro · 30 hari", "amountIdr": 100000 }],
+  "totalIdr": 100000,
+  "status": "PAID"
+}
+```
 
 Contoh JSON invoice:
 

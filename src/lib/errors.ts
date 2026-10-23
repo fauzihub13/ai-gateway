@@ -43,6 +43,13 @@ export class InsufficientBalanceError extends AppError {
   }
 }
 
+/** Plan lewat masa aktif (`planExpiresAt <= now`). Request ditolak sampai beli lagi. */
+export class PlanExpiredError extends AppError {
+  constructor(message = 'Your plan has expired. Purchase a plan to continue.') {
+    super('plan_expired', 402, 'insufficient_quota', message);
+  }
+}
+
 export class TooManyRequestsError extends AppError {
   constructor(code = 'rate_limit_exceeded', message = 'Rate limit exceeded. Please retry later.') {
     super(code, 429, code === 'quota_exceeded' || code === 'key_quota_exceeded' ? 'insufficient_quota' : 'rate_limit_error', message, null, true);

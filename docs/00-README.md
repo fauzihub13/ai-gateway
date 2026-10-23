@@ -25,8 +25,8 @@ Detail konsep abstraksi model → [08-MODEL-MAPPING.md](./08-MODEL-MAPPING.md)
 
 1. Auth user (register, login, verify email)
 2. Generate & manage API key user (multiple keys, revoke, rate limit per key)
-3. Plan dengan limit & akses model berbeda (saat ini hanya plan `free`; plan tambahan dibuat dari admin)
-4. Top-up saldo via payment gateway (Midtrans)
+3. Plan dengan kuota token, limit rate, dan akses model sendiri (diatur admin per plan; `periodDays` menentukan panjang periode)
+4. Beli/perpanjang plan dari saldo + top-up via payment gateway (Midtrans)
 5. Endpoint proxy `/v1/chat/completions` & `/v1/models` yang forward ke 9Router
 6. Streaming SSE support (normalisasi output ke spec OpenAI)
 7. Usage tracking & billing per request
@@ -126,11 +126,18 @@ Jangan pernah campur keduanya. Platform **menerjemahkan** user API key menjadi r
 | **User API key** | Kredensial `sk-mpruy-xxx` yang diterbitkan platform ke user |
 | **Public model** | Nama model versi kami (`mimo`) |
 | **Internal model** | Nama model di 9Router (`mimo-free`) |
-| **Plan** | Paket dengan limit & akses model (saat ini hanya `free`) |
-| **Balance** | Saldo Rupiah user, dipotong per request |
-| **Usage log** | Catatan satu request (token in/out, biaya, model, status) |
+| **Plan** | Paket dengan limit, kuota token, akses model, dan `billingMode` sendiri |
+| **`billingMode`** | Cara plan menagih: `PAYG` (potong saldo per token) atau `SUBSCRIPTION` (kuota token, tanpa potong saldo) |
+| **`periodDays`** | Panjang satu periode plan dalam hari — diatur **per plan** di admin, bukan konstanta global |
+| **Balance** | Saldo Rupiah user; dipotong hanya untuk plan PAYG |
+| **Kuota periode** | Batas token per periode plan (`planTokenQuota` vs pemakaian sejak `planStartedAt`) |
+| **Nilai pemakaian** | `costIdr` = harga resmi provider × token (tanpa markup) — untuk estimasi |
+| **Ditagih** | `chargedIdr` = yang benar-benar dipotong dari saldo (0 untuk SUBSCRIPTION) |
+| **Hemat** | `savedIdr` = `markedIdr − chargedIdr` (sebesar retail untuk SUBSCRIPTION) |
+| **Harga resmi** | `Model.priceInPer1MIdr` dkk — harga provider, dipakai untuk nilai pemakaian |
+| **Usage log** | Catatan satu request (token in/out, tiga angka biaya, model, status) |
 | **Upstream** | Provider asli model (rahasia, jangan pernah dibocorkan) |
-| **Markup** | Selisih harga jual kami di atas cost upstream |
+| **Markup** | Faktor harga retail di atas harga resmi; hanya relevan untuk PAYG |
 | **SSE** | Server-Sent Events, protokol streaming token |
 | **Idempotency** | Jaminan operasi sama tidak dobel efek (billing/webhook) |
 
@@ -170,8 +177,9 @@ User ──Authorization: Bearer sk-mpruy-xxx──▶ Platform /v1/chat/complet
                                                 │
                                     1. auth: hash & lookup ApiKey
                                     2. rate limit (Redis)
-                                    3. resolve model: mimo → mimo-free
-                                    4. cek saldo & akses plan
+                                    3. resolve model: mimo → mimo-free + akses plan/key
+                                    4. gerbang: masa aktif plan → kuota periode → saldo
+                                       (mode-aware; SUBSCRIPTION tak pakai saldo)
                                                 │
                                                 ▼
                                       9Router /v1/chat/completions
@@ -182,8 +190,8 @@ User ──Authorization: Bearer sk-mpruy-xxx──▶ Platform /v1/chat/complet
                                                 │
                                     5. normalisasi stream (SSE)
                                     6. kumpulkan usage (fallback estimasi)
-                                    7. potong saldo (atomic)
-                                    8. tulis UsageLog
+                                    7. hitung tiga angka: nilai / ditagih / hemat
+                                    8. tulis UsageLog; potong saldo bila charged > 0
                                                 │
                                                 ▼
 User ◀───────────── normalized OpenAI response ────────

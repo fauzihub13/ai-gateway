@@ -16,6 +16,8 @@ import {
 import { formatIdr } from '@/lib/utils';
 import { apiFetch } from '@/lib/client';
 
+type BillingMode = 'PAYG' | 'SUBSCRIPTION';
+
 interface PlanOption {
   name: string;
   displayName: string;
@@ -23,6 +25,9 @@ interface PlanOption {
   rpmLimit: number;
   monthlyTokenLimit: number | null;
   monthlyPriceIdr: number;
+  /** Panjang satu periode plan (hari), diatur admin per plan. */
+  periodDays: number;
+  billingMode: BillingMode;
   isActive: boolean;
   models: string[];
 }
@@ -30,9 +35,15 @@ interface PlanOption {
 interface CurrentPlan {
   planId: string;
   planName: string;
+  billingMode: BillingMode;
+  startedAt: string | null;
   expiresAt: string | null;
   daysLeft: number | null;
   expired: boolean;
+  tokenQuota: number | null;
+  tokensUsed: number;
+  tokensRemaining: number | null;
+  quotaExhausted: boolean;
 }
 
 interface PlansResponse {
@@ -109,7 +120,10 @@ export function PlanCard({ onPurchased }: { onPurchased?: (balance: number) => v
           </CardTitle>
           <CardDescription>
             Plan aktif: <span className="font-medium text-foreground">{current.planName}</span>
+            {current.billingMode === 'SUBSCRIPTION' ? ' · langganan (kuota token)' : ' · pay-as-you-go (potong saldo)'}
             {current.expiresAt ? ` · berlaku sampai ${new Date(current.expiresAt).toLocaleDateString('id-ID')}` : ' · tanpa masa aktif'}
+            {current.tokenQuota != null &&
+              ` · sisa kuota ${Math.max(current.tokensRemaining ?? 0, 0).toLocaleString('id-ID')} / ${current.tokenQuota.toLocaleString('id-ID')} token`}
             {' · '}dibayar dari saldo, bukan tagihan berulang.
           </CardDescription>
         </CardHeader>
@@ -133,7 +147,9 @@ export function PlanCard({ onPurchased }: { onPurchased?: (balance: number) => v
                     </div>
                     <p className="mt-1 text-lg font-semibold">
                       {isFree ? 'Gratis' : formatIdr(p.monthlyPriceIdr)}
-                      {!isFree && <span className="text-xs font-normal text-muted-foreground"> / 30 hari</span>}
+                      {!isFree && (
+                        <span className="text-xs font-normal text-muted-foreground"> / {p.periodDays} hari</span>
+                      )}
                     </p>
                     <ul className="mt-3 space-y-1 text-xs text-muted-foreground">
                       <li className="flex items-center gap-1.5">
@@ -143,16 +159,22 @@ export function PlanCard({ onPurchased }: { onPurchased?: (balance: number) => v
                       <li className="flex items-center gap-1.5">
                         <Check className="h-3 w-3" />
                         {p.monthlyTokenLimit == null
-                          ? 'Token tanpa batas'
-                          : `${p.monthlyTokenLimit.toLocaleString('id-ID')} token/bulan`}
+                          ? 'Tanpa kuota token'
+                          : `${p.monthlyTokenLimit.toLocaleString('id-ID')} token / ${p.periodDays} hari`}
                       </li>
+                      <li className="flex items-center gap-1.5">
+                        <Check className="h-3 w-3" />
+                        {p.billingMode === 'SUBSCRIPTION' ? 'Tanpa potong saldo (kuota token)' : 'Bayar per token dari saldo'}
+                      </li>
+                      {p.billingMode === 'SUBSCRIPTION' && (
+                        <li className="flex items-center gap-1.5">
+                          <Check className="h-3 w-3" />
+                          Hemat hingga markup {p.markup}× dari harga resmi
+                        </li>
+                      )}
                       <li className="flex items-center gap-1.5">
                         <Check className="h-3 w-3" />
                         {p.models.length} model tersedia
-                      </li>
-                      <li className="flex items-center gap-1.5">
-                        <Check className="h-3 w-3" />
-                        markup {p.markup}×
                       </li>
                     </ul>
                   </div>
@@ -160,7 +182,7 @@ export function PlanCard({ onPurchased }: { onPurchased?: (balance: number) => v
                     className="mt-4"
                     size="sm"
                     variant={isCurrent ? 'outline' : 'default'}
-                    disabled={isFree || isCurrent || !affordable}
+                    disabled={isFree || !affordable}
                     onClick={() => {
                       setError('');
                       setConfirm(p);
@@ -169,7 +191,7 @@ export function PlanCard({ onPurchased }: { onPurchased?: (balance: number) => v
                     {isFree
                       ? 'Plan default'
                       : isCurrent
-                        ? 'Sedang aktif'
+                        ? 'Perpanjang'
                         : affordable
                           ? 'Beli dengan saldo'
                           : 'Saldo kurang'}
@@ -185,10 +207,15 @@ export function PlanCard({ onPurchased }: { onPurchased?: (balance: number) => v
       <Dialog open={Boolean(confirm)} onOpenChange={(o) => !o && !buying && setConfirm(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Beli plan {confirm?.displayName}?</DialogTitle>
+            <DialogTitle>
+              {confirm?.name === current.planName
+                ? `Perpanjang plan ${confirm?.displayName}?`
+                : `Beli plan ${confirm?.displayName}?`}
+            </DialogTitle>
             <DialogDescription>
-              Saldo terpotong {formatIdr(confirm?.monthlyPriceIdr ?? 0)} dan plan aktif selama 30 hari
-              sejak sekarang. Sisa masa aktif plan sebelumnya tidak diperpanjang — hangus.
+              {confirm?.name === current.planName
+                ? `Masa aktif ditambah ${confirm?.periodDays ?? 0} hari dan kuota token periode ini ditambah — tanpa reset.`
+                : `Saldo terpotong ${formatIdr(confirm?.monthlyPriceIdr ?? 0)} dan plan aktif ${confirm?.periodDays ?? 0} hari sejak sekarang.`}
             </DialogDescription>
           </DialogHeader>
           <dl className="space-y-2 rounded-sm border bg-muted/40 p-4 text-sm">

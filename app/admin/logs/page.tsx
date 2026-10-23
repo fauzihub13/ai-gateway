@@ -32,7 +32,12 @@ interface LogItem {
   completionTokens: number;
   cachedPromptTokens: number;
   totalTokens: number;
+  /** Nilai pemakaian: harga resmi provider × token (tanpa markup). */
   costIdr: number;
+  /** Yang benar-benar ditagih ke saldo (0 untuk SUBSCRIPTION). */
+  chargedIdr: number;
+  /** Hemat = (harga resmi × markup) − charged. 0 untuk PAYG. */
+  savedIdr: number;
   latencyMs: number | null;
   errorCode: string | null;
 }
@@ -287,14 +292,16 @@ export default function AdminLogsPage() {
               <TableHead className="text-right">Out</TableHead>
               <TableHead className="text-right">Cached</TableHead>
               <TableHead className="text-right">Total</TableHead>
-              <TableHead className="text-right">Biaya</TableHead>
+              <TableHead className="text-right">Nilai</TableHead>
+              <TableHead className="text-right">Ditagih</TableHead>
+              <TableHead className="text-right">Hemat</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               Array.from({ length: 6 }).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={9}>
+                  <TableCell colSpan={11}>
                     <Skeleton className="h-5 w-full" />
                   </TableCell>
                 </TableRow>
@@ -322,11 +329,13 @@ export default function AdminLogsPage() {
                   </TableCell>
                   <TableCell className="tabular text-right">{formatNumber(l.totalTokens)}</TableCell>
                   <TableCell className="tabular text-right">{formatIdr(l.costIdr)}</TableCell>
+                  <TableCell className="tabular text-right">{formatIdr(l.chargedIdr)}</TableCell>
+                  <TableCell className="tabular text-right text-success">{formatIdr(l.savedIdr)}</TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={9} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={11} className="py-10 text-center text-muted-foreground">
                   Tidak ada log pada rentang ini.
                 </TableCell>
               </TableRow>

@@ -83,32 +83,45 @@ Detail → [11-PAYMENT-GATEWAY.md](./11-PAYMENT-GATEWAY.md).
 
 `UsageLog.status`: `completed`, `partial`, `error`, `rejected` (rejected = ditolak sebelum ke upstream).
 
-### 1.5 Subscription (plan berbayar) lifecycle
+### 1.5 Subscription (plan) lifecycle
 
-Plan berbayar **dibeli dari saldo**, bukan lewat payment gateway. Satu pembelian = satu periode 30 hari.
+Plan berbayar **dibeli dari saldo**, bukan lewat payment gateway. Satu pembelian = satu periode
+sepanjang **`Plan.periodDays`** hari (diatur admin per plan — bukan konstanta global).
 
 ```
-   ┌──────────────┐  beli plan (saldo cukup)   ┌────────────────────┐
-   │ plan gratis  │───────────────────────────▶│ plan berbayar      │
-   │ (planExpiresAt = null)                    │ planExpiresAt=+30d │
-   └──────────────┘                            └─────────┬──────────┘
-          ▲                                              │
-          │  admin turunkan manual                       │ tanggal lewat
-          │  (POST /api/admin/users/:id/plan)            │ (plan TETAP aktif,
-          │                                              │  hanya ditandai
-          └──────────────────────────────────────────────┘  `expired: true`)
+   ┌──────────────┐   beli/perpanjang (saldo cukup)   ┌────────────────────────┐
+   │ plan gratis  │──────────────────────────────────▶│ plan aktif             │
+   │ (tanpa expiry)                                    │ planExpiresAt=+period  │
+   └──────────────┘                                    └───────────┬────────────┘
+          ▲                                                        │
+          │  admin turunkan manual                                 │ tanggal lewat
+          │  (POST /api/admin/users/:id/plan)                      │ → request DITOLAK
+          │                                                        │   (402 plan_expired)
+          └────────────────────────────────────────────────────────┘   plan tetap menempel
 ```
 
 | Keadaan | `User.planId` | `User.planExpiresAt` | Efek |
 |---|---|---|---|
-| Plan gratis | plan default (`free`) | `null` | tanpa expiry |
-| Plan berbayar aktif | plan berbayar | tanggal > sekarang | akses & limit plan berbayar |
-| Plan berbayar lewat tanggal | plan berbayar (**tidak berubah**) | tanggal ≤ sekarang | akses **tetap** seperti plan berbayar; `current.expired = true` di dashboard & panel admin |
-| Setelah admin menurunkan | plan default | `null` | kembali ke limit gratis |
+| Plan gratis | plan default (`free`) | `null` | tanpa expiry; kuota (bila ada) bergulir tiap `periodDays` |
+| Plan aktif | plan berbayar | tanggal > sekarang | akses & limit plan |
+| **Lewat tanggal** | plan (**tidak berubah**) | tanggal ≤ sekarang | request **ditolak** (`402 plan_expired`) sampai beli lagi |
+| Setelah admin menurunkan | plan default | `null` | kembali ke limit plan default |
+
+**Beli lagi saat plan sama masih aktif → stack:** `planExpiresAt += periodDays` dan
+`planTokenQuota += Plan.monthlyTokenLimit`. `planStartedAt` **tidak** direset supaya pemakaian
+token & masa aktif tetap sejajar. **Ganti tier atau beli setelah expired → reset** periode dari
+sekarang.
 
 **Tidak ada auto-downgrade.** Plan hanya berubah karena (a) user membeli plan, atau (b) admin
-mengubahnya manual. Lewat `planExpiresAt` tidak mengubah `User.planId`; itu hanya penanda agar
-admin tahu siapa yang perlu diturunkan/diperpanjang. Tidak ada cron expiry.
+mengubahnya manual. Lewat `planExpiresAt` **tidak** mengubah `User.planId` dan **tidak**
+menurunkan akses diam-diam — tetapi request berikutnya ditolak sampai user memperpanjang.
+Tidak ada cron expiry.
+
+**Kuota bergulir (plan tanpa expiry):** bila plan punya `monthlyTokenLimit` dan `planStartedAt`
+kosong/lewat `periodDays`, periode di-reset dari sekarang & kuota diisi ulang
+(`ensureQuotaPeriod()` di [`src/lib/subscription.ts`](../src/lib/subscription.ts)). Plan
+berbayar **tidak** ikut bergulir otomatis — kalau ikut, user akan dapat kuota gratis setelah
+masa aktifnya habis.
 
 **Penting:** `User.planId` adalah satu-satunya sumber kebenaran plan aktif. Tabel `Subscription`
 hanya **riwayat** pembelian (siapa, plan apa, harga berapa, kapan berlaku). Validitas ditentukan
@@ -198,12 +211,15 @@ Client → POST /v1/chat/completions  { stream: false }
   [auth]      hash key → lookup → ok?
   [plan]      key scope mengizinkan model?
   [limit]     per-key & per-user rate limit lolos?
-  [balance]   saldo > 0 & quota plan belum habis?
+  [gates]     masa aktif plan → kuota token periode → saldo (mode-aware)
   [map]       public model → internal model
   [upstream]  POST 9Router (stream:none/false) → JSON
   [settle]    usage = response.usage ?? estimate(messages, content)
-              biaya = f(usage, model, plan.markup)
-              ALWAYS potong saldo + tulis UsageLog dalam satu transaksi
+              breakdown = computeCostBreakdown(usage, model, plan)
+                costIdr    = nilai resmi (tanpa markup)
+                chargedIdr = PAYG ? resmi×markup : 0
+                savedIdr   = retail − charged
+              tulis UsageLog; potong saldo hanya bila chargedIdr > 0
   [respond]   JSON OpenAI-normalized + header rate limit
 ```
 
@@ -233,19 +249,23 @@ Detail quirk & implementasi → [09-STREAMING.md](./09-STREAMING.md).
 ```
 Request model "X" dari user dengan plan P, key K
 │
+├─ Plan P lewat masa aktif (planExpiresAt ≤ now)? ──ya──▶ 402 plan_expired
+│
 ├─ Model X ada di tabel Model & active? ──tidak──▶ 404 model_not_found
 │
-├─ Plan P punya akses ke X? ──tidak──▶ 403 model_not_allowed
-│      (plan_models: saat ini hanya plan free, akses model dikelola di admin)
+├─ Plan P punya akses ke X? (PlanModel) ──tidak──▶ 403 model_not_allowed
 │
 ├─ Key K scope:
 │     ├─ scope="full" → semua model plan boleh
 │     └─ scope="models" → X harus ada di K.allowedModels ──tidak──▶ 403 model_not_in_key_scope
 │
-├─ Model gratis? ──ya──▶ lanjut (biaya 0)
-├─ Saldo user > 0? ──tidak──▶ 402 insufficient_balance
+├─ Kuota token periode plan habis? ──habis──▶ 429 quota_exceeded
+│      (hanya bila planTokenQuota ≠ null; dihitung sejak planStartedAt)
 │
-├─ Quota bulanan plan belum habis? ──habis──▶ 429 quota_exceeded
+├─ Mode plan SUBSCRIPTION? ──ya──▶ lanjut tanpa cek saldo (kuota yang membatasi)
+│
+├─ Model gratis (harga efektif 0)? ──ya──▶ lanjut (biaya 0)
+├─ Saldo user > 0? ──tidak──▶ 402 insufficient_balance
 │
 └─ LOLOS → resolve internal model → forward ke 9Router
 ```
@@ -254,39 +274,50 @@ Request model "X" dari user dengan plan P, key K
 
 ## 7. Billing calculation
 
+Harga di tabel `Model` adalah **harga resmi provider** (official). Dari harga itu
+diturunkan tiga angka per request — satu implementasi:
+`computeCostBreakdown()` di [`src/lib/billing.ts`](../src/lib/billing.ts).
+
 ```
-cost_idr = (prompt_tokens     / 1_000_000 * price_in_per_1m  * markup)
-         + (completion_tokens / 1_000_000 * price_out_per_1m * markup)
+raw_official = (prompt_tokens / 1_000_000 * price_in_per_1m)
+             + (completion_tokens / 1_000_000 * price_out_per_1m)
+  // token cached pakai price_cached_in_per_1m bila di-set, fallback price_in_per_1m
 
-where:
-  price_in_per_1m, price_out_per_1m = harga dasar model per 1 juta token (tabel Model, IDR)
-  markup = faktor per plan (saat ini hanya plan free, markup 1)
-           — ATAU harga final per plan langsung disimpan (lihat [08-MODEL-MAPPING.md])
-
-director: simpan hasil dalam satuan Rupiah pecahan terkecil agar presisi
-  → simpan sebagai Int (sen? atau rupiah bulat?) → keputusan: simpan balance sebagai
-    Int rupiah (Rp), pembulatan ke atas (ceil) ke rupiah terdekat ke arah AMAN (kami).
+costIdr    = ceil(raw_official)                          → NILAI pemakaian
+markedIdr  = ceil(raw_official * plan.markup)            → harga retail
+chargedIdr = plan.billingMode === 'SUBSCRIPTION' ? 0 : markedIdr
+savedIdr   = max(0, markedIdr − chargedIdr)
 ```
 
-Aturan pembulatan: **ceil ke rupiah** bila harga pecahan, untuk mencegah kebocoran uang karena pembulatan bawah berulang. Contoh: biaya `Rp12.3` → tagih `Rp13`.
+| Plan | `costIdr` | `chargedIdr` | `savedIdr` |
+|---|---|---|---|
+| **PAYG** | harga resmi | resmi × markup | 0 |
+| **SUBSCRIPTION** | harga resmi | **0** | resmi × markup |
 
-Atomic debit (pseudocode):
+Satuan: **per 1 juta token**, sama dengan provider upstream. `balance` disimpan
+sebagai **Int rupiah bulat**; pembulatan **ceil** ke arah aman (kami) supaya
+pecahan berulang tidak bocor.
+
+Atomic settle (pseudocode):
 
 ```ts
 await db.$transaction(async (tx) => {
-  const user = await tx.user.findUnique({
-    where: { id: userId }, select: { balance: true },
+  // 1. idempotency: requestId UNIQUE — sudah ada → no-op
+  const usage = await tx.usageLog.create({
+    data: { /* ... */ costIdr, chargedIdr, savedIdr, status },
   });
-  if (user.balance < cost) throw new InsufficientBalance();
-  await tx.user.update({
-    where: { id: userId },
-    data: { balance: { decrement: cost } },
-  });
-  await tx.usageLog.create({ data: { /* ... */ costIdr: cost } });
+
+  // 2. potong saldo HANYA bila ada yang ditagih (PAYG). Saldo boleh minus
+  //    (overdraft) supaya task in-flight selesai — request berikutnya diblokir.
+  if (chargedIdr > 0) {
+    await tx.$executeRaw`UPDATE "User" SET balance = balance - ${chargedIdr} WHERE id = ${userId}`;
+    await tx.balanceLedger.create({ data: { /* ... */ deltaIdr: -chargedIdr, reason: 'USAGE' } });
+  }
 });
 ```
 
-Idempotency: sertakan `requestId` unik; unique constraint di `UsageLog.requestId` mencegah dobel tagih saat retry.
+Idempotency: `requestId` unik; unique constraint di `UsageLog.requestId`
+mencegah dobel tagih saat retry.
 
 Detail → [10-BILLING-USAGE.md](./10-BILLING-USAGE.md).
 
@@ -322,9 +353,12 @@ Karena `INSERT ... ON CONFLICT DO NOTHING` + decrement di transaksi yang sama, r
 | Body invalid (Zod) | 400 | `invalid_request_error` | setelah perbaiki |
 | Model tidak ada | 404 | `model_not_found` | tidak |
 | Plan/key tidak boleh model | 403 | `model_not_allowed` | tidak |
-| Saldo habis (model berbayar) | 402 | `insufficient_balance` | setelah top-up |
-| Saldo 0 tapi model gratis (harga efektif 0) | — | — | request lanjut, biaya Rp0 |
-| Quota bulanan habis | 429 | `quota_exceeded` | bulan depan/upgrade |
+| Masa aktif plan habis | 402 | `plan_expired` | setelah beli/perpanjang |
+| Kuota token periode habis | 429 | `quota_exceeded` | beli plan lagi |
+| Saldo habis (plan PAYG, model berbayar) | 402 | `insufficient_balance` | setelah top-up |
+| Saldo 0 tapi model gratis (harga efektif 0) | — | — | request lanjut, tagih Rp0 |
+| Saldo 0 tapi plan SUBSCRIPTION | — | — | request lanjut (kuota yang membatasi) |
+| Batas belanja API key terlampaui | 429 | `key_quota_exceeded` | naikkan limit / tunggu periode baru |
 | Rate limit per key | 429 | `rate_limit_exceeded` | ya (setelah reset) |
 | Rate limit per IP | 429 | `rate_limit_exceeded` | ya |
 | 9Router timeout/5xx | 503 | `upstream_unavailable` | ya |

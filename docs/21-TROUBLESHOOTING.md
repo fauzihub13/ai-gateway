@@ -158,7 +158,10 @@ Debug:
 
 ```sql
 EXPLAIN ANALYZE
-SELECT date_trunc('day',"createdAt"), SUM("costIdr")
+SELECT date_trunc('day',"createdAt"),
+       SUM("costIdr")    AS value,    -- nilai pemakaian (harga resmi)
+       SUM("chargedIdr") AS charged,  -- yang dipotong dari saldo
+       SUM("savedIdr")   AS saved     -- hemat user
 FROM "UsageLog" WHERE "userId"=$1 AND "createdAt" >= now() - interval '30 days'
 GROUP BY 1;
 ```
@@ -172,7 +175,8 @@ Lihat [18-MONITORING.md](./18-MONITORING.md).
 ```
 [ ] User kirim internalName (mimo-free) → 404 (benar, jangan bocor)
 [ ] Model ada di 9Router tapi 404 di platform → belum didaftarkan di DB
-[ ] Harga jual salah → cek priceIn/OutPer1MIdr & markup plan
+[ ] Nilai pemakaian salah → cek priceIn/OutPer1MIdr (harga resmi, tanpa markup)
+[ ] Tagihan saldo salah → cek plan.billingMode: PAYG pakai markup, SUBSCRIPTION harus chargedIdr=0
 [ ] Model deprecated masih muncul → cek isActive
 [ ] Response stream masih tampilkan internal model → cek rewrite di normalizer
 [ ] capabilities salah (tools ditolak) → update capabilities JSON

@@ -127,7 +127,7 @@ Konsisten dengan spec umum (mirip OpenAI/Anthropic). Lihat [05-API-CONTRACT.md](
 }
 ```
 
-Bila quota bulanan (bukan rate) → `type: "insufficient_quota"`, `code: "quota_exceeded"`.
+Bila kuota token periode plan atau batas belanja key (bukan rate) → `type: "insufficient_quota"`, `code: "quota_exceeded"` / `"key_quota_exceeded"`.
 
 ---
 

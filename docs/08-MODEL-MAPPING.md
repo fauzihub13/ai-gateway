@@ -48,8 +48,9 @@ Tabel ini **tidak pernah** ditampilkan ke user, tidak masuk API response, tidak 
 | `description` | deskripsi singkat untuk docs/UI |
 | `contextWindow` | maks token konteks |
 | `maxOutputTokens` | maks output |
-| `priceInPer1MIdr` | harga dasar input per 1 juta token (IDR) |
-| `priceOutPer1MIdr` | harga dasar output per 1 juta token (IDR) |
+| `priceInPer1MIdr` | **harga resmi provider** input per 1 juta token (IDR) |
+| `priceOutPer1MIdr` | **harga resmi provider** output per 1 juta token (IDR) |
+| `priceCachedInPer1MIdr` | harga input cache-hit (`NULL` = pakai `priceInPer1MIdr`) |
 | `capabilities` | JSON flags (stream/vision/tools/jsonMode) |
 | `isActive` | model tersedia? |
 | `deprecatedAt` | tanggal deprecate |
@@ -60,31 +61,54 @@ Detail kolom → [04-DATABASE-SCHEMA.md](./04-DATABASE-SCHEMA.md).
 
 ## 4. Pricing strategy
 
-Harga final ke user = `harga dasar × markup plan`, dibulatkan ceil ke rupiah.
+**Harga di tabel `Model` = harga resmi provider (official)** — angka yang muncul kalau
+user bayar langsung ke provider. Harga ini **tidak** dipakai untuk menagih; fungsinya
+menghitung **nilai pemakaian** ("kalau pakai harga resmi, segini biayanya").
+
+Dari harga resmi diturunkan tiga angka per request (lihat
+[10-BILLING-USAGE.md §2](./10-BILLING-USAGE.md)):
 
 ```
-cost_idr = ceil( (promptTokens/1_000_000) × priceInPer1MIdr × plan.markup
-               + (completionTokens/1_000_000) × priceOutPer1MIdr × plan.markup )
+raw_official = (promptTokens/1_000_000)     × priceInPer1MIdr
+             + (completionTokens/1_000_000) × priceOutPer1MIdr
+// token cached pakai priceCachedInPer1MIdr bila di-set, fallback priceInPer1MIdr
+
+costIdr    = ceil(raw_official)                       → nilai pemakaian
+markedIdr  = ceil(raw_official × plan.markup)         → harga retail
+chargedIdr = plan.billingMode === 'SUBSCRIPTION' ? 0 : markedIdr
+savedIdr   = max(0, markedIdr − chargedIdr)
 ```
+
+| Mode plan | `costIdr` | `chargedIdr` | `savedIdr` |
+|---|---|---|---|
+| **PAYG** | harga resmi | resmi × markup | 0 |
+| **SUBSCRIPTION** | harga resmi | **0** | resmi × markup |
 
 Satuan harga **per 1 juta token** dipilih karena sama dengan satuan yang dipakai provider
 upstream, sehingga angka bisa dibaca langsung tanpa konversi mental.
 
 ### 4.1 Contoh harga
 
-| Model | In/1M (dasar) | Out/1M (dasar) | free (×1) |
+| Model | In/1M (resmi) | Out/1M (resmi) | SUBSCRIPTION (charged) |
 |---|---|---|---|
-| mimo | Rp4.000 | Rp12.000 | Rp4.000 / Rp12.000 |
+| mimo | Rp4.000 | Rp12.000 | Rp0 (kuota token) |
 
-> Harga dasar `priceInPer1MIdr`/`priceOutPer1MIdr` diset **di atas cost upstream**. Markup plan menambah margin. Simpan harga dasar sebagai angka bulat (IDR). Untuk model sangat murah, harga per 1M tetap bilangan bulat (mis. Rp500/1M) sehingga biaya satu request kecil dibulatkan ceil ke Rp1.
+> `priceInPer1MIdr`/`priceOutPer1MIdr` = **harga resmi provider**, bukan harga jual.
+> Simpan sebagai angka bulat (IDR). Untuk model sangat murah, harga per 1M tetap
+> bilangan bulat (mis. Rp500/1M) sehingga biaya satu request kecil dibulatkan ceil ke Rp1.
+> `markup` per plan hanya memengaruhi harga retail (`markedIdr`) — dan karenanya
+> besaran "hemat" untuk plan SUBSCRIPTION — bukan nilai pemakaian.
 
 ### 4.2 Alternatif pricing (per-plan eksklusif)
 
-Bila tiap plan butuh harga final berbeda yang tidak linear, tambahkan tabel `PlanModelPrice { planId, modelId, priceInPer1MIdr, priceOutPer1MIdr }` dan gunakan bila ada; fallback ke markup × harga dasar. (Fase awal: markup cukup.)
+Bila tiap plan butuh harga retail berbeda yang tidak linear, tambahkan tabel
+`PlanModelPrice { planId, modelId, priceInPer1MIdr, priceOutPer1MIdr }` dan gunakan bila
+ada; fallback ke markup × harga resmi. (Fase awal: markup cukup.)
 
 ### 4.3 Display harga ke user
 
-`GET /api/models` mengembalikan **harga final sudah termasuk markup plan user**. Jangan pernah kirim `priceInPer1MIdr` dasar mentah ke user.
+`GET /api/models` mengembalikan **harga resmi provider** (tanpa markup). Angka ini
+dipakai user untuk **estimasi nilai pemakaian**, bukan untuk menghitung tagihan.
 
 ```json
 {
@@ -96,6 +120,10 @@ Bila tiap plan butuh harga final berbeda yang tidak linear, tambahkan tabel `Pla
   "capabilities": { "stream": true, "vision": true, "tools": true, "jsonMode": true }
 }
 ```
+
+> Yang benar-benar ditagih ditentukan mode plan: PAYG = resmi × markup;
+> SUBSCRIPTION = 0 (dibatasi kuota token). Lihat
+> [10-BILLING-USAGE.md §2](./10-BILLING-USAGE.md).
 
 ---
 

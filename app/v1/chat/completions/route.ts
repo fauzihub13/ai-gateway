@@ -5,12 +5,12 @@ import {
   ChatBodySchema,
   assertCapabilities,
   enforceModelLimits,
-  assertKeyMonthlyLimit,
+  assertKeyPeriodLimit,
   type PreflightContext,
 } from '@/lib/proxy';
 import { nineRouterFetch } from '@/lib/ninerouter';
 import { createNormalizer, extractCachedTokens } from '@/lib/stream';
-import { settleUsage, computeCost } from '@/lib/billing';
+import { settleUsage, computeCostBreakdown } from '@/lib/billing';
 import { estimatePromptTokens, estimateTokens, promptToText } from '@/lib/tokens';
 import { toErrorResponse, BadRequestError, InternalError } from '@/lib/errors';
 import { mapUpstreamError } from '@/lib/upstream';
@@ -36,15 +36,14 @@ export async function POST(req: Request) {
 
     // Gerbang limit per-key dicek SEKARANG (sebelum upstream), bukan tengah stream.
     // Estimasi pakai max_tokens yang sudah di-clamp; settle tetap rekam biaya aktual.
-    await assertKeyMonthlyLimit(
-      ctx,
-      computeCost({
-        model: ctx.model,
-        plan: ctx.plan,
-        promptTokens: estimatePromptTokens(limited.messages),
-        completionTokens: limited.max_tokens ?? 0,
-      }),
-    );
+    // SUBSCRIPTION tidak memotong saldo → charged 0, gerbang key otomatis lolos.
+    const estimate = computeCostBreakdown({
+      model: ctx.model,
+      plan: ctx.plan,
+      promptTokens: estimatePromptTokens(limited.messages),
+      completionTokens: limited.max_tokens ?? 0,
+    });
+    await assertKeyPeriodLimit(ctx, estimate.chargedIdr);
 
     const wantsStream = body.stream === true;
     const promptText = promptToText(body.messages);
@@ -90,14 +89,17 @@ export async function POST(req: Request) {
         prompt_tokens_details: { cached_tokens: cachedPromptTokens },
       };
 
-      const cost = computeCost({
+      // Tiga angka biaya: nilai resmi (analitik), tagihan saldo, dan hemat.
+      const cost = computeCostBreakdown({
         model: ctx.model, plan: ctx.plan,
         promptTokens, completionTokens, cachedPromptTokens,
       });
-      await assertKeyMonthlyLimit(ctx, cost);
+      await assertKeyPeriodLimit(ctx, cost.chargedIdr);
       await recordUsage(ctx, {
         requestId, endpoint: 'chat.completions', streamed: false,
-        promptTokens, completionTokens, cachedPromptTokens, costIdr: cost, status: 'COMPLETED',
+        promptTokens, completionTokens, cachedPromptTokens,
+        costIdr: cost.valueIdr, chargedIdr: cost.chargedIdr, savedIdr: cost.savedIdr,
+        status: 'COMPLETED',
         latencyMs: Date.now() - start, upstreamLatencyMs: Date.now() - upstreamStart,
       });
 
@@ -116,7 +118,7 @@ export async function POST(req: Request) {
         const usage = state.usage!;
         const status =
           state.finishReason === 'stop' || state.sawDone ? 'COMPLETED' : 'PARTIAL';
-        const cost = computeCost({
+        const cost = computeCostBreakdown({
           model: finalCtx.model, plan: finalCtx.plan,
           promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens,
           cachedPromptTokens: usage.cachedPromptTokens,
@@ -125,7 +127,8 @@ export async function POST(req: Request) {
           requestId, endpoint: 'chat.completions', streamed: true,
           promptTokens: usage.prompt_tokens, completionTokens: usage.completion_tokens,
           cachedPromptTokens: usage.cachedPromptTokens ?? 0,
-          costIdr: cost, status, latencyMs: Date.now() - start,
+          costIdr: cost.valueIdr, chargedIdr: cost.chargedIdr, savedIdr: cost.savedIdr,
+          status, latencyMs: Date.now() - start,
           upstreamLatencyMs: Date.now() - upstreamStart,
         });
       },
@@ -167,7 +170,12 @@ interface UsageRecord {
   promptTokens: number;
   completionTokens: number;
   cachedPromptTokens?: number;
+  /** Nilai pemakaian: harga resmi provider × token (tanpa markup). */
   costIdr: number;
+  /** Yang benar-benar ditagih ke saldo (0 untuk SUBSCRIPTION). */
+  chargedIdr?: number;
+  /** Hemat = (harga resmi × markup) − charged. 0 untuk PAYG. */
+  savedIdr?: number;
   status: 'COMPLETED' | 'PARTIAL' | 'ERROR' | 'REJECTED';
   latencyMs: number;
   upstreamLatencyMs?: number;
@@ -186,6 +194,8 @@ async function recordUsage(ctx: PreflightContext, u: UsageRecord): Promise<void>
       completionTokens: u.completionTokens,
       cachedPromptTokens: u.cachedPromptTokens ?? 0,
       costIdr: u.costIdr,
+      chargedIdr: u.chargedIdr,
+      savedIdr: u.savedIdr,
       status: u.status,
       streamed: u.streamed,
       latencyMs: u.latencyMs,

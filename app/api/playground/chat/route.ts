@@ -1,11 +1,19 @@
 import { z } from 'zod';
-import { nanoid } from 'nanoid';
 import { db } from '@/lib/db';
 import { requireUser, assertCsrf } from '@/lib/auth';
 import { nineRouterFetch } from '@/lib/ninerouter';
-import { settleUsage, computeCost, getBalance, isFreeModel } from '@/lib/billing';
+import { settleUsage, computeCostBreakdown, getBalance, isFreeModel } from '@/lib/billing';
+import { ensureQuotaPeriod } from '@/lib/subscription';
 import { estimatePromptTokens, estimateTokens } from '@/lib/tokens';
-import { toErrorResponse, BadRequestError, InsufficientBalanceError, ForbiddenError, NotFoundError } from '@/lib/errors';
+import {
+  toErrorResponse,
+  BadRequestError,
+  InsufficientBalanceError,
+  ForbiddenError,
+  NotFoundError,
+  PlanExpiredError,
+  TooManyRequestsError,
+} from '@/lib/errors';
 import { mapUpstreamError } from '@/lib/upstream';
 import { extractCachedTokens } from '@/lib/stream';
 import { getRequestId, json } from '@/lib/http';
@@ -32,9 +40,13 @@ export async function POST(req: Request) {
     assertCsrf(req);
     const body = Schema.parse(await req.json());
 
-    // Akses model mengikuti plan aktif apa adanya. Plan yang lewat masa aktif
-    // tidak diturunkan otomatis — admin yang menurunkannya manual.
     const user = await db.user.findUniqueOrThrow({ where: { id: s.sub }, include: { plan: true } });
+
+    // Gerbang masa aktif plan: lewat `planExpiresAt` → tolak sampai beli lagi.
+    // Plan tidak diturunkan otomatis; admin menurunkannya manual bila perlu.
+    if (user.planExpiresAt && user.planExpiresAt.getTime() <= Date.now()) {
+      throw new PlanExpiredError('Masa aktif plan sudah habis. Perpanjang dari dashboard untuk memakai playground lagi.');
+    }
 
     const model = await db.model.findUnique({ where: { publicName: body.model } });
     if (!model || !model.isActive) throw new NotFoundError('model_not_found', `The model \`${body.model}\` does not exist.`);
@@ -44,8 +56,24 @@ export async function POST(req: Request) {
     });
     if (!access) throw new ForbiddenError('model_not_allowed', `You do not have access to model \`${body.model}\`.`);
 
-    // Model gratis (harga efektif 0) tetap boleh dipakai walau saldo 0.
-    if (!isFreeModel(model, user.plan)) {
+    // Gerbang kuota token per periode plan (plan berkuota) — helper yang sama
+    // dengan gateway API supaya aturannya satu sumber.
+    const period = await ensureQuotaPeriod(user.id);
+    if (period.planTokenQuota != null && period.planStartedAt) {
+      const agg = await db.usageLog.aggregate({
+        where: { userId: user.id, createdAt: { gte: period.planStartedAt }, status: { not: 'REJECTED' } },
+        _sum: { totalTokens: true },
+      });
+      if ((agg._sum.totalTokens ?? 0) >= period.planTokenQuota) {
+        throw new TooManyRequestsError(
+          'quota_exceeded',
+          'Kuota token periode ini sudah habis. Beli plan lagi untuk menambah kuota.',
+        );
+      }
+    }
+
+    // PAYG: saldo harus > 0 (kecuali model gratis). SUBSCRIPTION: tanpa potong saldo.
+    if (user.plan.billingMode !== 'SUBSCRIPTION' && !isFreeModel(model, user.plan)) {
       const balance = await getBalance(s.sub);
       if (balance <= 0) throw new InsufficientBalanceError();
     }
@@ -82,11 +110,15 @@ export async function POST(req: Request) {
       prompt_tokens_details: { cached_tokens: cachedPromptTokens },
     };
 
-    const cost = computeCost({ model, plan: user.plan, promptTokens, completionTokens, cachedPromptTokens });
+    const cost = computeCostBreakdown({
+      model, plan: user.plan, promptTokens, completionTokens, cachedPromptTokens,
+    });
 
     await settleUsage({
       requestId, userId: user.id, modelId: model.id, endpoint: 'playground',
-      promptTokens, completionTokens, cachedPromptTokens, costIdr: cost, status: 'COMPLETED',
+      promptTokens, completionTokens, cachedPromptTokens,
+      costIdr: cost.valueIdr, chargedIdr: cost.chargedIdr, savedIdr: cost.savedIdr,
+      status: 'COMPLETED',
       streamed: false, latencyMs: Date.now() - start,
     });
 

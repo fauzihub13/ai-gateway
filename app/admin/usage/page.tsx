@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Activity, ArrowDownToLine, ArrowUpFromLine, Database, Sigma, TrendingUp } from 'lucide-react';
+import {
+  Activity,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Database,
+  PiggyBank,
+  Sigma,
+  TrendingUp,
+  Wallet,
+} from 'lucide-react';
 import { PageHeader, StatCard } from '@/components/stat-card';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,7 +22,16 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { formatIdr, formatNumber } from '@/lib/utils';
 import { apiFetch } from '@/lib/client';
 
-interface PerUser {
+interface MoneyTotals {
+  /** Nilai pemakaian: harga resmi provider × token (tanpa markup). */
+  value: number;
+  /** Yang benar-benar ditagih ke saldo (0 untuk SUBSCRIPTION). */
+  charged: number;
+  /** Hemat = (harga resmi × markup) − charged. 0 untuk PAYG. */
+  saved: number;
+}
+
+interface PerUser extends MoneyTotals {
   userId: string;
   email: string;
   requests: number;
@@ -21,26 +39,23 @@ interface PerUser {
   completionTokens: number;
   cachedPromptTokens: number;
   tokens: number;
-  cost: number;
 }
 
-interface Bucket {
+interface Bucket extends MoneyTotals {
   key: string;
   requests: number;
   promptTokens: number;
   completionTokens: number;
   cachedPromptTokens: number;
   tokens: number;
-  cost: number;
 }
 
-interface Totals {
+interface Totals extends MoneyTotals {
   requests: number;
   promptTokens: number;
   completionTokens: number;
   cachedPromptTokens: number;
   tokens: number;
-  cost: number;
 }
 
 const EMPTY_TOTALS: Totals = {
@@ -49,7 +64,9 @@ const EMPTY_TOTALS: Totals = {
   completionTokens: 0,
   cachedPromptTokens: 0,
   tokens: 0,
-  cost: 0,
+  value: 0,
+  charged: 0,
+  saved: 0,
 };
 
 type Preset = '24h' | '7d' | '30d' | '90d' | 'custom';
@@ -77,13 +94,20 @@ function formatDateTime(iso: string): string {
 
 function UsageStats({ totals }: { totals: Totals }) {
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-8">
       <StatCard label="Requests" value={formatNumber(totals.requests)} icon={Activity} />
       <StatCard label="Token in" value={formatNumber(totals.promptTokens)} icon={ArrowDownToLine} />
       <StatCard label="Token out" value={formatNumber(totals.completionTokens)} icon={ArrowUpFromLine} />
       <StatCard label="Cached" value={formatNumber(totals.cachedPromptTokens)} icon={Database} />
       <StatCard label="Total token" value={formatNumber(totals.tokens)} icon={Sigma} />
-      <StatCard label="Biaya" value={formatIdr(totals.cost)} icon={TrendingUp} accent="success" />
+      <StatCard
+        label="Nilai pemakaian"
+        value={formatIdr(totals.value)}
+        icon={TrendingUp}
+        hint="Harga resmi provider"
+      />
+      <StatCard label="Ditagih" value={formatIdr(totals.charged)} icon={Wallet} accent="primary" />
+      <StatCard label="Hemat" value={formatIdr(totals.saved)} icon={PiggyBank} accent="success" />
     </div>
   );
 }
@@ -194,7 +218,9 @@ function PerUserTable({
               <TableHead className="text-right">Token out</TableHead>
               <TableHead className="text-right">Cached</TableHead>
               <TableHead className="text-right">Total token</TableHead>
-              <TableHead className="text-right">Biaya</TableHead>
+              <TableHead className="text-right">Nilai</TableHead>
+              <TableHead className="text-right">Ditagih</TableHead>
+              <TableHead className="text-right">Hemat</TableHead>
               <TableHead className="text-right">Aksi</TableHead>
             </TableRow>
           </TableHeader>
@@ -202,7 +228,7 @@ function PerUserTable({
             {loading ? (
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={8}>
+                  <TableCell colSpan={10}>
                     <Skeleton className="h-5 w-full" />
                   </TableCell>
                 </TableRow>
@@ -216,7 +242,9 @@ function PerUserTable({
                   <TableCell className="tabular text-right">{formatNumber(u.completionTokens)}</TableCell>
                   <TableCell className="tabular text-right">{formatNumber(u.cachedPromptTokens)}</TableCell>
                   <TableCell className="tabular text-right">{formatNumber(u.tokens)}</TableCell>
-                  <TableCell className="tabular text-right">{formatIdr(u.cost)}</TableCell>
+                  <TableCell className="tabular text-right">{formatIdr(u.value)}</TableCell>
+                  <TableCell className="tabular text-right">{formatIdr(u.charged)}</TableCell>
+                  <TableCell className="tabular text-right text-success">{formatIdr(u.saved)}</TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">
                       <Button variant="ghost" size="sm" onClick={() => onSelect({ id: u.userId, email: u.email })}>
@@ -231,7 +259,7 @@ function PerUserTable({
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={10} className="py-10 text-center text-muted-foreground">
                   Belum ada usage pada rentang ini.
                 </TableCell>
               </TableRow>
@@ -317,14 +345,16 @@ function UserDrilldown({
               <TableHead className="text-right">Token out</TableHead>
               <TableHead className="text-right">Cached</TableHead>
               <TableHead className="text-right">Total token</TableHead>
-              <TableHead className="text-right">Biaya</TableHead>
+              <TableHead className="text-right">Nilai</TableHead>
+              <TableHead className="text-right">Ditagih</TableHead>
+              <TableHead className="text-right">Hemat</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               Array.from({ length: 4 }).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell colSpan={7}>
+                  <TableCell colSpan={9}>
                     <Skeleton className="h-5 w-full" />
                   </TableCell>
                 </TableRow>
@@ -338,12 +368,14 @@ function UserDrilldown({
                   <TableCell className="tabular text-right">{formatNumber(i.completionTokens)}</TableCell>
                   <TableCell className="tabular text-right">{formatNumber(i.cachedPromptTokens)}</TableCell>
                   <TableCell className="tabular text-right">{formatNumber(i.tokens)}</TableCell>
-                  <TableCell className="tabular text-right">{formatIdr(i.cost)}</TableCell>
+                  <TableCell className="tabular text-right">{formatIdr(i.value)}</TableCell>
+                  <TableCell className="tabular text-right">{formatIdr(i.charged)}</TableCell>
+                  <TableCell className="tabular text-right text-success">{formatIdr(i.saved)}</TableCell>
                 </TableRow>
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={9} className="py-10 text-center text-muted-foreground">
                   Tidak ada usage pada rentang ini.
                 </TableCell>
               </TableRow>
