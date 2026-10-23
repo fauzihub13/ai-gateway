@@ -208,16 +208,23 @@ export const ChatBodySchema = z
     model: z.string().min(1).max(64),
     messages: z
       .array(
-        z.object({
-          role: z.enum(['system', 'user', 'assistant', 'tool']),
-          // Batas panjang teks tidak divalidasi di sini.
-          // Payload dibatasi oleh client_max_body_size Nginx (50M)
-          // dan context window model upstream.
-          // Validasi Zod hanya memastikan tipe data, bukan ukuran.
-          content: z.union([z.string(), z.array(z.any()).max(50), z.null()]),
-          name: z.string().max(64).optional(),
-          tool_call_id: z.string().max(128).optional(),
-        }),
+        z
+          .object({
+            role: z.enum(['system', 'user', 'assistant', 'tool']),
+            // Batas panjang teks tidak divalidasi di sini.
+            // Payload dibatasi oleh client_max_body_size Nginx (50M)
+            // dan context window model upstream.
+            // Validasi Zod hanya memastikan tipe data, bukan ukuran.
+            content: z.union([z.string(), z.array(z.any()).max(50), z.null()]),
+            name: z.string().max(64).optional(),
+            tool_call_id: z.string().max(128).optional(),
+          })
+          // WAJIB: teruskan field lain apa adanya. Tanpa ini Zod membuang
+          // `tool_calls`/`function_call` dari assistant message dan
+          // `reasoning_content`, sehingga history agent menjadi tidak valid:
+          // provider menerima `tool` message tanpa pasangan `tool_calls` dan
+          // sering berhenti setelah reasoning tanpa mengeluarkan jawaban.
+          .passthrough(),
       )
       .min(1),
     // ponytail: no global message-count cap — batas asli = model.contextWindow (lihat enforceModelLimits).

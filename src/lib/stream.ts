@@ -208,9 +208,15 @@ export function createNormalizer(
     if (dataPayload === '[DONE]') {
       // Teruskan SEGERA. Menundanya sampai `flush()` membuat client menggantung
       // bila upstream mengirim `[DONE]` lalu mempertahankan koneksi (keep-alive)
-      // tanpa menutup body. `flush()` hanya menulis `[DONE]` bila belum terlihat.
-      state.sawDone = true;
-      safeEnqueue(controller, encoder.encode('data: [DONE]\n\n'));
+      // tanpa menutup body.
+      //
+      // Dedupe: 9Router terbukti bisa mengirim `[DONE]` DUA kali. Jangan
+      // meneruskan yang kedua — sebagian client menganggap sentinel ganda
+      // sebagai event tak terduga.
+      if (!state.sawDone) {
+        state.sawDone = true;
+        safeEnqueue(controller, encoder.encode('data: [DONE]\n\n'));
+      }
       return;
     }
 

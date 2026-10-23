@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { enforceModelLimits } from '@/lib/proxy';
+import { ChatBodySchema, enforceModelLimits } from '@/lib/proxy';
 import { BadRequestError } from '@/lib/errors';
 
 const model = { contextWindow: 1000, maxOutputTokens: 200 };
@@ -68,6 +68,26 @@ describe('enforceModelLimits', () => {
     expect(() => enforceModelLimits(m, { messages: [msg('hi')], max_tokens: 5000 })).toThrow(
       BadRequestError,
     );
+  });
+
+  it('ChatBodySchema mempertahankan tool_calls & reasoning_content di messages', () => {
+    const parsed = ChatBodySchema.parse({
+      model: 'gpt-4o',
+      messages: [
+        {
+          role: 'assistant',
+          content: null,
+          reasoning_content: 'berpikir',
+          tool_calls: [
+            { id: 'call_1', type: 'function', function: { name: 'read', arguments: '{}' } },
+          ],
+        },
+        { role: 'tool', content: 'isi file', tool_call_id: 'call_1' },
+      ],
+    });
+    const assistant = parsed.messages[0] as Record<string, unknown>;
+    expect(assistant.tool_calls).toBeDefined();
+    expect(assistant.reasoning_content).toBe('berpikir');
   });
 
   it('no message-count cap: 500 short messages pass', () => {

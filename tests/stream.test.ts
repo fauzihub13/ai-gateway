@@ -91,6 +91,15 @@ describe('stream normalizer', () => {
     expect(out.match(/data: \[DONE\]/g)?.length).toBe(1);
   });
 
+  it('dedupe [DONE] ganda dari upstream (quirk 9Router)', async () => {
+    const { out } = await runStream([
+      delta('x'),
+      'data: [DONE]\n\n',
+      'data: [DONE]\n\n',
+    ]);
+    expect(out.match(/data: \[DONE\]/g)?.length).toBe(1);
+  });
+
   it('mencatat stream terpotong tanpa meng-inject error ke client', async () => {
     // Simulasi: model sudah mengeluarkan teks lalu koneksi ditutup sepihak.
     const { out, settled } = await runStream([delta('langkah A'), delta('langkah B')]);
