@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
@@ -18,6 +18,18 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [unverified, setUnverified] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [notice, setNotice] = useState('');
+
+  // Pesan dari server (mis. sesi lama yang cookie-nya sudah dibersihkan).
+  // Dibaca di effect agar tidak bentrok dengan prerender.
+  useEffect(() => {
+    const reason = new URLSearchParams(window.location.search).get('error');
+    if (reason === 'account_deactivated') {
+      setNotice('Akun Anda dinonaktifkan. Hubungi admin bila menurut Anda ini keliru.');
+    } else if (reason === 'session_invalid') {
+      setNotice('Sesi Anda sudah tidak berlaku. Silakan masuk kembali.');
+    }
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -65,6 +77,11 @@ export default function LoginPage() {
             <CardDescription>Masuk ke akun Anda untuk mengelola API.</CardDescription>
           </CardHeader>
           <CardContent>
+            {notice && (
+              <p className="mb-4 rounded-sm border border-hairline bg-muted/60 p-3 text-xs text-muted-foreground">
+                {notice}
+              </p>
+            )}
             <form onSubmit={submit} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>

@@ -21,7 +21,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
     select: { email: true, role: true, status: true },
   });
 
-  if (!user || user.status === 'DEACTIVATED') redirect('/login?next=/dashboard');
+  // Token masih valid tapi user tidak ada / dinonaktifkan: bersihkan cookie
+  // lewat route logout supaya middleware tidak memantulkan kembali ke dashboard.
+  if (!user) redirect('/api/auth/logout?reason=session_invalid');
+  if (user.status === 'DEACTIVATED') redirect('/api/auth/logout?reason=account_deactivated');
 
   const nav = [...items];
   if (session.role === 'ADMIN') {

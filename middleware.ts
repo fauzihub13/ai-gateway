@@ -13,9 +13,38 @@ function redirectLogin(req: NextRequest) {
   return NextResponse.redirect(url);
 }
 
+/**
+ * Hanya izinkan path internal sebagai tujuan redirect (`next`), supaya parameter
+ * tidak bisa dipakai untuk open redirect ke domain lain.
+ */
+function safeNextPath(value: string | null): string | null {
+  if (!value || !value.startsWith('/') || value.startsWith('//')) return null;
+  // Jangan pernah redirect balik ke halaman guest — bisa jadi loop.
+  if (value === '/login' || value.startsWith('/login?') || value === '/register' || value.startsWith('/register?')) {
+    return null;
+  }
+  return value;
+}
+
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const token = req.cookies.get('auth_token')?.value;
+
+  const isAuthPage = pathname === '/login' || pathname === '/register';
+
+  // Sudah login tapi membuka /login atau /register → langsung ke dashboard.
+  // Token diverifikasi dulu; token rusak/expired dibiarkan lewat supaya user
+  // bisa login ulang.
+  if (isAuthPage) {
+    if (!token) return NextResponse.next();
+    try {
+      await jwtVerify(token, secret());
+      const target = safeNextPath(req.nextUrl.searchParams.get('next')) ?? '/dashboard';
+      return NextResponse.redirect(new URL(target, req.url));
+    } catch {
+      return NextResponse.next();
+    }
+  }
 
   const isDashboard = pathname.startsWith('/dashboard') || pathname.startsWith('/playground');
   const isAdmin = pathname.startsWith('/admin') || pathname.startsWith('/api/admin');
@@ -73,5 +102,12 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/playground/:path*', '/admin/:path*', '/api/admin/:path*'],
+  matcher: [
+    '/login',
+    '/register',
+    '/dashboard/:path*',
+    '/playground/:path*',
+    '/admin/:path*',
+    '/api/admin/:path*',
+  ],
 };
