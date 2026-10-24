@@ -152,7 +152,7 @@ function renderCard(
 
   setFont(700, 62);
   ctx.fillStyle = fg;
-  ctx.fillText('Mpruy AI Overview', 72, 170);
+  ctx.fillText('Mpruy AI', 72, 170);
 
   // ── Hero: TOKEN DIPROSES (angka terbesar) — fill gradient electric ──
   setFont(600, 15, true);

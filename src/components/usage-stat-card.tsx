@@ -64,10 +64,10 @@ export function UsageStatCard({
               type="button"
               onClick={() => setOpen(true)}
               className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 transition-colors hover:text-electric hover:underline"
-              aria-label={`Lihat angka lengkap ${label}`}
+              aria-label={`Lihat detail ${label}`}
             >
               <Eye className="h-3 w-3" />
-              Angka lengkap
+              Lihat
             </button>
           </div>
         </CardContent>
