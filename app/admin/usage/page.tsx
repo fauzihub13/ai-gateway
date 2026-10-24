@@ -12,7 +12,8 @@ import {
   TrendingUp,
   Wallet,
 } from 'lucide-react';
-import { PageHeader, StatCard } from '@/components/stat-card';
+import { PageHeader } from '@/components/stat-card';
+import { UsageStatCard } from '@/components/usage-stat-card';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -94,20 +95,35 @@ function formatDateTime(iso: string): string {
 
 function UsageStats({ totals }: { totals: Totals }) {
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-8">
-      <StatCard label="Requests" value={formatNumber(totals.requests)} icon={Activity} />
-      <StatCard label="Token in" value={formatNumber(totals.promptTokens)} icon={ArrowDownToLine} />
-      <StatCard label="Token out" value={formatNumber(totals.completionTokens)} icon={ArrowUpFromLine} />
-      <StatCard label="Cached" value={formatNumber(totals.cachedPromptTokens)} icon={Database} />
-      <StatCard label="Total token" value={formatNumber(totals.tokens)} icon={Sigma} />
-      <StatCard
+    // 8 card, 4 per baris di desktop → tepat 2 baris.
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <UsageStatCard label="Requests" value={totals.requests} icon={Activity} />
+      <UsageStatCard label="Token in" value={totals.promptTokens} icon={ArrowDownToLine} />
+      <UsageStatCard label="Token out" value={totals.completionTokens} icon={ArrowUpFromLine} />
+      <UsageStatCard label="Cached" value={totals.cachedPromptTokens} icon={Database} />
+      <UsageStatCard label="Total token" value={totals.tokens} icon={Sigma} />
+      <UsageStatCard
         label="Nilai pemakaian"
-        value={formatIdr(totals.value)}
+        value={totals.value}
         icon={TrendingUp}
-        hint="Harga resmi provider"
+        money
+        hint="Harga resmi provider × token, tanpa markup."
       />
-      <StatCard label="Ditagih" value={formatIdr(totals.charged)} icon={Wallet} accent="primary" />
-      <StatCard label="Hemat" value={formatIdr(totals.saved)} icon={PiggyBank} accent="success" />
+      <UsageStatCard
+        label="Ditagih"
+        value={totals.charged}
+        icon={Wallet}
+        money
+        hint="Jumlah yang benar-benar dipotong dari saldo (Rp0 untuk plan subscription)."
+      />
+      <UsageStatCard
+        label="Hemat"
+        value={totals.saved}
+        icon={PiggyBank}
+        accent="success"
+        money
+        hint="Selisih harga resmi × markup dengan jumlah yang ditagih."
+      />
     </div>
   );
 }
