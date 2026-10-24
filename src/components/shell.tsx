@@ -20,6 +20,7 @@ import {
   Settings,
   Shield,
   Sparkles,
+  UserRound,
   Users,
   Wallet,
   X,
@@ -51,7 +52,8 @@ export type NavIcon =
   | 'plans'
   | 'transactions'
   | 'settings'
-  | 'audit';
+  | 'audit'
+  | 'profile';
 
 const ICONS: Record<NavIcon, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -67,6 +69,7 @@ const ICONS: Record<NavIcon, LucideIcon> = {
   transactions: Receipt,
   settings: Settings,
   audit: ScrollText,
+  profile: UserRound,
 };
 
 export interface NavItem {
@@ -295,6 +298,13 @@ export function Shell({
                     <span className="text-xs font-normal text-muted-foreground">{user.role}</span>
                   </div>
                 </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link href="/dashboard/profile" className="cursor-pointer">
+                    <UserRound className="h-4 w-4" />
+                    Profil
+                  </Link>
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={logout}>
                   <LogOut className="h-4 w-4" />
