@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Wallet, Activity, Coins, TrendingUp, PiggyBank, RefreshCw } from 'lucide-react';
-import { PageHeader, StatCard } from '@/components/stat-card';
+import { PageHeader } from '@/components/stat-card';
+import { UsageStatCard } from '@/components/usage-stat-card';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -100,20 +101,29 @@ export default function DashboardOverview() {
           Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-28" />)
         ) : (
           <>
-            <StatCard label="Saldo" value={formatIdr(data?.balance ?? 0)} icon={Wallet} accent="primary" />
-            <StatCard label="Request (30d)" value={formatNumber(data?.totals.requests ?? 0)} icon={Activity} />
-            <StatCard label="Token (30d)" value={formatNumber(data?.totals.tokens ?? 0)} icon={Coins} />
-            <StatCard
-              label="Nilai pemakaian (30d)"
-              value={formatIdr(data?.totals.value ?? 0)}
-              icon={TrendingUp}
-              hint="Harga resmi provider"
+            <UsageStatCard
+              label="Saldo"
+              value={data?.balance ?? 0}
+              icon={Wallet}
+              money
+              hint="Saldo prabayar akun Anda."
             />
-            <StatCard
+            <UsageStatCard label="Request (30d)" value={data?.totals.requests ?? 0} icon={Activity} />
+            <UsageStatCard label="Token (30d)" value={data?.totals.tokens ?? 0} icon={Coins} />
+            <UsageStatCard
+              label="Nilai pemakaian (30d)"
+              value={data?.totals.value ?? 0}
+              icon={TrendingUp}
+              money
+              hint="Harga resmi provider × token, tanpa markup."
+            />
+            <UsageStatCard
               label="Hemat (30d)"
-              value={formatIdr(data?.totals.saved ?? 0)}
+              value={data?.totals.saved ?? 0}
               icon={PiggyBank}
               accent="success"
+              money
+              hint="Selisih harga resmi × markup dengan jumlah yang ditagih."
             />
           </>
         )}
