@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, Copy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -8,12 +8,37 @@ export function CodeBlock({
   code,
   filename,
   className,
+  maxHeight = 420,
 }: {
   code: string;
   filename?: string;
   className?: string;
+  /**
+   * Tinggi maksimum area kode dalam px. Kode yang lebih panjang akan
+   * di-scroll di dalam blok, bukan memanjangkan halaman. `null` untuk
+   * membiarkan tinggi mengikuti isi.
+   */
+  maxHeight?: number | null;
 }) {
   const [copied, setCopied] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const preRef = useRef<HTMLPreElement>(null);
+
+  useEffect(() => {
+    const el = preRef.current;
+    if (!el) return;
+    const update = () => {
+      setHasMore(el.scrollHeight - el.scrollTop - el.clientHeight > 4);
+    };
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => {
+      el.removeEventListener('scroll', update);
+      observer.disconnect();
+    };
+  }, [code, maxHeight]);
 
   function copy() {
     navigator.clipboard.writeText(code);
@@ -34,9 +59,25 @@ export function CodeBlock({
           {copied ? 'Tersalin' : 'Copy'}
         </button>
       </div>
-      <pre className="overflow-x-auto p-4 text-xs leading-relaxed scrollbar-thin">
-        <code>{code}</code>
-      </pre>
+      <div className="relative">
+        <pre
+          ref={preRef}
+          tabIndex={0}
+          style={maxHeight ? { maxHeight } : undefined}
+          className={cn(
+            'scrollbar-thin overflow-auto p-4 text-xs leading-relaxed',
+            maxHeight ? 'overscroll-contain' : undefined,
+          )}
+        >
+          <code>{code}</code>
+        </pre>
+        {hasMore && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-card to-transparent"
+          />
+        )}
+      </div>
     </div>
   );
 }

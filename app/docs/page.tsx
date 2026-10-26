@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { CodeBlock } from '@/components/code-block';
-import { buildOpenCodeV1, buildOpenCodeV2, OPENCODE_GLOBAL_CONFIG_PATH, type OpenCodeModel } from '@/lib/opencode-config';
+import { OpenCodeConfigBuilder } from '@/components/opencode-config-builder';
+import { OPENCODE_GLOBAL_CONFIG_PATH, type OpenCodeModel } from '@/lib/opencode-config';
 import { formatNumber } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
@@ -143,8 +144,8 @@ data: [DONE]`;
   }
 }`;
 
-  // OpenCode integration: generate ready-to-paste configs from the live model list.
-  const openCodeModels = models.map((m) => {
+  // OpenCode integration: model metadata passed to the interactive config generator.
+  const openCodeModels: OpenCodeModel[] = models.map((m) => {
     const caps = (m.capabilities as Record<string, unknown>) ?? {};
     return {
       publicName: m.publicName,
@@ -157,20 +158,9 @@ data: [DONE]`;
     };
   });
   const defaultModel = models[0]?.publicName ?? 'mimo';
-  const openCodeArgs = {
-    baseUrl: base,
-    models: openCodeModels,
-    defaultModel,
-    apiKey: 'sk-mpruy-YOUR_KEY',
-  };
-  const openCodeV2Config = buildOpenCodeV2(openCodeArgs);
-  const openCodeV2EnvConfig = buildOpenCodeV2({ ...openCodeArgs, useEnv: true });
-  const openCodeV1Config = buildOpenCodeV1(openCodeArgs);
 
   const openCodeModelsList = `curl ${api}/models \\
   -H "Authorization: Bearer $MPRUY_API_KEY"`;
-
-  const openCodeEnv = `export MPRUY_API_KEY="sk-mpruy-YOUR_KEY"`;
 
   const openCodeRun = `# jalankan OpenCode dari project mana pun
 opencode
@@ -187,7 +177,6 @@ opencode run --model mpruy/${defaultModel}#high "Refactor fungsi ini dan jelaska
     "input": ["text", "image"],
     "output": ["text"]
   },
-  "limit": { "context": 1048576, "output": 131072 },
   "variants": [
     { "id": "low", "settings": { "reasoningEffort": "low" } },
     { "id": "medium", "settings": { "reasoningEffort": "medium" } },
@@ -197,7 +186,6 @@ opencode run --model mpruy/${defaultModel}#high "Refactor fungsi ini dan jelaska
 }`;
 
   const openCodeV1Variants = `{
-  "limit": { "context": 1048576, "output": 131072 },
   "variants": {
     "low": { "reasoningEffort": "low" },
     "medium": { "reasoningEffort": "medium" },
@@ -491,8 +479,8 @@ opencode run --model mpruy/${defaultModel}#high "Refactor fungsi ini dan jelaska
       <Section id="opencode-v2" title="OpenCode — V2">
         <p>
           <strong>OpenCode</strong> adalah AI coding agent di terminal. Mpruy AI dipakai sebagai{' '}
-          <em>custom provider</em> yang OpenAI-compatible, jadi seluruh model Anda langsung tersedia hanya
-          dengan menempel satu blok config.
+          <em>custom provider</em> yang OpenAI-compatible, jadi model yang Anda pilih langsung tersedia
+          hanya dengan menempel satu blok config.
         </p>
         <p>
           Bagian ini untuk <strong>OpenCode V2</strong> — format <code>providers</code> +{' '}
@@ -553,32 +541,28 @@ opencode run --model mpruy/${defaultModel}#high "Refactor fungsi ini dan jelaska
 # lalu buat file opencode.jsonc di dalamnya`}
         />
 
-        <p className="font-medium text-foreground">2. Tempel config</p>
-        <CodeBlock filename={OPENCODE_GLOBAL_CONFIG_PATH} code={openCodeV2Config} />
-        <Note>
-          Ganti <code>sk-mpruy-YOUR_KEY</code> dengan API key asli Anda. Model default diambil dari{' '}
-          <code>{defaultModel}</code> — ganti kapan saja lewat <code>/models</code>.
-        </Note>
+        <p className="font-medium text-foreground">2. Pilih model & salin config</p>
         <p>
-          Alternatif lebih aman: simpan key sebagai environment variable, lalu pakai substitusi{' '}
-          <code>{'{env:MPRUY_API_KEY}'}</code> agar key tidak ikut ter-commit.
+          Centang model yang ingin dimasukkan ke config. Hanya model terpilih yang ditulis ke file,
+          jadi config tetap ringkas dan mudah dibaca. Buka/tutup tiap object lewat chevron untuk
+          melihat detail, lalu salin seluruh config.
         </p>
-        <CodeBlock filename="shell · set sekali" code={openCodeEnv} />
-        <CodeBlock filename={OPENCODE_GLOBAL_CONFIG_PATH} code={openCodeV2EnvConfig} />
+        <OpenCodeConfigBuilder baseUrl={base} models={openCodeModels} />
+        <Note>
+          Model default dipilih dari model yang Anda centang. Model di luar plan akan ditolak saat
+          dipakai — pastikan plan Anda mencakup model tersebut.
+        </Note>
 
-        <p className="font-medium text-foreground">Capabilities, limit & variants</p>
+        <p className="font-medium text-foreground">Capabilities & variants</p>
         <p>
-          Tiap entri model menyertakan tiga blok opsional yang membuat OpenCode tahu kemampuan model. Semuanya
-          diisi otomatis dari kapabilitas model di Mpruy:
+          Tiap entri model menyertakan dua blok opsional yang membuat OpenCode tahu kemampuan model.
+          Semuanya diisi otomatis dari kapabilitas model di Mpruy:
         </p>
         <ul className="list-disc space-y-1 pl-5">
           <li>
             <strong>capabilities</strong> (shape <a href="https://models.dev" className="text-primary hover:underline">models.dev</a> v2):
             <code>tools</code> (function calling), <code>input</code> (media diterima), dan <code>output</code>{' '}
             (media dihasilkan).
-          </li>
-          <li>
-            <strong>limit</strong>: <code>context</code> dan <code>output</code> (token maksimum).
           </li>
           <li>
             <strong>variants</strong>: thinking level per model — <code>low</code>, <code>medium</code>,{' '}
@@ -667,15 +651,6 @@ opencode run --model mpruy/${defaultModel}#high "Refactor fungsi ini dan jelaska
                   <code>tools</code>, <code>input</code>, <code>output</code>
                 </TableCell>
                 <TableCell>Kemampuan model (shape models.dev v2).</TableCell>
-              </TableRow>
-              <TableRow>
-                <TableCell>
-                  <code>models.*.limit</code>
-                </TableCell>
-                <TableCell>
-                  <code>context</code>, <code>output</code>
-                </TableCell>
-                <TableCell>Batas token konteks dan output.</TableCell>
               </TableRow>
               <TableRow>
                 <TableCell>
@@ -793,21 +768,24 @@ opencode run --model mpruy/${defaultModel}#high "Refactor fungsi ini dan jelaska
 # buat opencode.json (atau opencode.jsonc) di dalamnya`}
         />
 
-        <p className="font-medium text-foreground">2. Tempel config</p>
-        <CodeBlock filename={OPENCODE_GLOBAL_CONFIG_PATH} code={openCodeV1Config} />
-        <Note>
-          Ganti <code>sk-mpruy-YOUR_KEY</code>. Nama provider (<code>mpruy</code>) juga jadi prefix model:
-          <code>mpruy/{defaultModel}</code>.
-        </Note>
+        <p className="font-medium text-foreground">2. Pilih model & salin config</p>
         <p>
-          Bila ingin key dari environment variable, isi <code>options.apiKey</code> dengan{' '}
-          <code>{'{env:MPRUY_API_KEY}'}</code> dan export variabelnya:
+          Generator config yang sama dipakai untuk V1: buka{' '}
+          <a href="#opencode-v2" className="text-primary hover:underline">
+            bagian OpenCode V2
+          </a>{' '}
+          di atas, centang model yang diinginkan, lalu pilih tab <code>V1</code> pada panel config.
+          Hanya model terpilih yang dimasukkan ke file.
         </p>
-        <CodeBlock filename="shell · set sekali" code={openCodeEnv} />
+        <Note>
+          Nama provider (<code>mpruy</code>) juga jadi prefix model: <code>mpruy/{'<model>'}</code>.
+          Ganti <code>sk-mpruy-YOUR_KEY</code> dengan API key Anda, atau aktifkan opsi baca key dari
+          environment variable di generator.
+        </Note>
 
-        <p className="font-medium text-foreground">Limit & variants (thinking level)</p>
+        <p className="font-medium text-foreground">Variants (thinking level)</p>
         <p>
-          V1 menyetel <code>limit</code> dan <code>variants</code> pada entri model. Berbeda dari V2,{' '}
+          V1 menyetel <code>variants</code> pada entri model. Berbeda dari V2,{' '}
           <code>variants</code> di V1 berupa objek dengan nama variant sebagai key, dan V1 tidak memakai field{' '}
           <code>capabilities</code>. Thinking level default: <code>low</code> → <code>max</code>.
         </p>
