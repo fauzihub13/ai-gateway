@@ -120,6 +120,10 @@ model ApiKey {
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   name            String
   keyHash         String    @unique
+  // Salinan terenkripsi (AES-256-GCM) agar user bisa copy ulang key dari
+  // dashboard. Key yang dibuat sebelum kolom ini ada bernilai null dan tidak
+  // bisa ditampilkan lagi (harus revoke & buat baru).
+  keyCiphertext   String?
   prefix          String
   last4           String
   scope           KeyScope  @default(FULL)

@@ -24,6 +24,7 @@ Branch: `main` → prod; PR → preview (staging-like); `develop` (opsional) →
 | `DIRECT_URL` | ya | `postgresql://...` | non-pooled (migrasi Prisma) |
 | `AUTH_JWT_SECRET` | ya | 32+ byte acak | tanda tangan session JWT |
 | `API_KEY_PEPPER` | ya | rahasia | pepper hash API key |
+| `API_KEY_ENCRYPTION_KEY` | disarankan | `openssl rand -base64 32` | kunci AES-256-GCM untuk copy ulang key; fallback ke pepper bila kosong |
 | `NINE_ROUTER_URL` | ya | `http://10.0.0.5:8080` | base URL 9Router (private) |
 | `NINE_ROUTER_API_KEY` | ya | rahasia | gateway key 9Router |
 | `MIDTRANS_SERVER_KEY` | ya | rahasia | Midtrans server |

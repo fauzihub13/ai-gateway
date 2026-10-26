@@ -2,8 +2,10 @@ import { z } from 'zod';
 import { db } from '@/lib/db';
 import { requireAdmin, assertCsrf } from '@/lib/auth';
 import { generateApiKey, hashApiKey, KEY_PREFIX } from '@/lib/apikey';
+import { encryptApiKey } from '@/lib/key-crypto';
+import { MAX_ACTIVE_KEYS_PER_USER } from '@/lib/key-policy';
 import { publicKeyView } from '@/lib/key-view';
-import { toErrorResponse, BadRequestError, NotFoundError } from '@/lib/errors';
+import { toErrorResponse, BadRequestError, NotFoundError, ForbiddenError } from '@/lib/errors';
 import { getRequestId, getClientIp, json } from '@/lib/http';
 
 export const runtime = 'nodejs';
@@ -27,6 +29,16 @@ export async function POST(req: Request) {
     const user = await db.user.findUnique({ where: { id: data.userId } });
     if (!user) throw new NotFoundError('user_not_found', 'User not found.');
 
+    const activeKeys = await db.apiKey.count({
+      where: { userId: user.id, status: { not: 'REVOKED' } },
+    });
+    if (activeKeys >= MAX_ACTIVE_KEYS_PER_USER) {
+      throw new ForbiddenError(
+        'key_limit_reached',
+        `User already has the maximum number of active API keys (${MAX_ACTIVE_KEYS_PER_USER}). Revoke one first.`,
+      );
+    }
+
     let raw: string;
     let hash: string;
     do {
@@ -39,6 +51,7 @@ export async function POST(req: Request) {
         userId: user.id,
         name: data.name,
         keyHash: hash,
+        keyCiphertext: encryptApiKey(raw),
         prefix: raw.slice(0, KEY_PREFIX.length + 4),
         last4: raw.slice(-4),
         scope: data.scope,

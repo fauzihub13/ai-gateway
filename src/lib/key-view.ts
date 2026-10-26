@@ -11,6 +11,7 @@ export function publicKeyView(k: {
   expiresAt: Date | null;
   lastUsedAt: Date | null;
   createdAt: Date;
+  keyCiphertext?: string | null;
 }) {
   return {
     id: k.id,
@@ -25,5 +26,7 @@ export function publicKeyView(k: {
     expiresAt: k.expiresAt,
     lastUsedAt: k.lastUsedAt,
     createdAt: k.createdAt,
+    // Key lama (sebelum fitur copy ulang) tidak punya ciphertext.
+    recoverable: Boolean(k.keyCiphertext),
   };
 }

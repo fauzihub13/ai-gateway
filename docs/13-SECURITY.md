@@ -71,7 +71,7 @@ APP_BASE_URL="http://localhost:3000"
 
 ## 4. API key security
 
-- Raw tidak pernah disimpan (hanya hash SHA-256 + pepper + prefix/last4 untuk display). Lihat [07](./07-API-KEY-MANAGEMENT.md).
+- Raw tidak pernah disimpan sebagai plaintext. Verifikasi memakai hash SHA-256 + pepper; salinan yang bisa dibaca server disimpan terenkripsi AES-256-GCM (`keyCiphertext`) agar user bisa copy ulang dari dashboard. Lihat [07](./07-API-KEY-MANAGEMENT.md).
 - **Redaction di logger:** semua log melewati redactor yang mengganti pola `sk-[a-z]+-[A-Za-z0-9]+` dengan `sk-***REDACTED***`.
 
 ```ts

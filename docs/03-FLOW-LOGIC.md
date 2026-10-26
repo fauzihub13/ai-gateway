@@ -191,12 +191,13 @@ User → /dashboard/keys → "Create key"
             2. validasi Zod
             3. generate: raw = "sk-mpruy-" + base62(32 byte acak)
             4. hash = sha256(raw + PEPPER), prefix = raw.slice(0, 12) (display)
-            5. simpan ApiKey { hash, prefix, last4, userId, ... } — RAW TIDAK DISIMPAN
-            6. balas raw SEKALI ke user (hanya saat ini)
-     → UI tampilkan modal "copy sekarang, tidak akan tampil lagi"
+            5. simpan ApiKey { keyHash, keyCiphertext, prefix, last4, userId, ... }
+               — plaintext tidak disimpan, ciphertext AES-256-GCM untuk copy ulang
+            6. balas rawKey ke user (untuk modal create)
+     → UI tampilkan modal "salin sekarang, atau copy ulang dari daftar key"
 ```
 
-**Edge cases:** key collision (astronomis kecil; retry generate bila hash sudah ada), user lupa key (tidak bisa dilihat — harus buat baru), revoke lalu buat lagi (boleh, banyak key per user).
+**Edge cases:** key collision (astronomis kecil; retry generate bila hash sudah ada), user copy ulang key kapan saja lewat `POST /api/keys/:id/reveal`, key lama tanpa ciphertext harus revoke & buat baru, revoke lalu buat lagi (boleh, banyak key per user).
 
 Detail → [07-API-KEY-MANAGEMENT.md](./07-API-KEY-MANAGEMENT.md).
 

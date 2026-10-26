@@ -250,6 +250,7 @@ curl -X POST https://app.mpruy.ai/api/auth/login \
 | GET | `/api/keys` | — | `{ keys: [...] }` |
 | POST | `/api/keys` | `{ name, scope?, models?, rpmLimit?, monthlyLimitIdr?, expiresAt? }` | `{ key, rawKey }` (rawKey sekali) |
 | PATCH | `/api/keys/:id` | `{ name?, rpmLimit?, monthlyLimitIdr?, status? }` | `{ key }` |
+| POST | `/api/keys/:id/reveal` | — | `{ rawKey }` (owner only, CSRF, audit) |
 | DELETE | `/api/keys/:id` | — | `{ ok: true }` (revoke, bukan hapus) |
 
 ```bash
@@ -260,7 +261,7 @@ curl -X POST https://app.mpruy.ai/api/keys \
 
 ```json
 {
-  "key": { "id": "key_1", "name": "Production", "prefix": "sk-mpruy-ab12", "last4": "cd34", "status": "ACTIVE" },
+  "key": { "id": "key_1", "name": "Production", "prefix": "sk-mpruy-ab12", "last4": "cd34", "status": "ACTIVE", "recoverable": true },
   "rawKey": "sk-mpruy-ab12cd34ef56gh78ij90kl12mn34op56"
 }
 ```

@@ -48,16 +48,20 @@ export function generateApiKey() {
 
 ## 3. Hashing & storage
 
-**Raw key TIDAK PERNAH disimpan.** Yang disimpan:
+**Raw key tidak pernah disimpan sebagai plaintext.** Yang disimpan:
 
 | Kolom | Isi | Kegunaan |
 |---|---|---|
-| `keyHash` | `sha256(raw + PEPPER)` hex | lookup & verifikasi |
+| `keyHash` | `sha256(raw + PEPPER)` hex | lookup & verifikasi request |
+| `keyCiphertext` | AES-256-GCM(`raw`, `API_KEY_ENCRYPTION_KEY`) | copy ulang dari dashboard |
 | `prefix` | `raw.slice(0, 12)` (`sk-mpruy-ab12`) | ditampilkan di UI |
 | `last4` | 4 char terakhir | ditampilkan (mis. `…cd34`) |
 
+`keyCiphertext` **nullable**: key yang dibuat sebelum fitur copy ulang ada tidak
+punya ciphertext dan tidak bisa dipulihkan (harus revoke & buat baru).
+
 ```ts
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash } from 'node:crypto';
 
 const PEPPER = process.env.API_KEY_PEPPER!;
 
@@ -65,6 +69,11 @@ export function hashApiKey(raw: string) {
   return createHash('sha256').update(raw + PEPPER).digest('hex');
 }
 ```
+
+Enkripsi memakai AES-256-GCM dengan IV acak per key. Format yang disimpan:
+`v1.<iv>.<authTag>.<ciphertext>` (base64url). Kunci enkripsi diambil dari
+`API_KEY_ENCRYPTION_KEY` (base64 32 byte); bila kosong, diturunkan dari
+`API_KEY_PEPPER`. Detail implementasi ada di `src/lib/key-crypto.ts`.
 
 Kenapa SHA-256 + pepper (bukan argon2): key punya entropi tinggi (256 bit), jadi tidak rentan brute-force seperti password. Hash cepat mempercepat lookup di hot path. Pepper (rahasia di env, bukan DB) melindungi bila DB bocor tanpa pepper.
 
@@ -86,14 +95,24 @@ Verifikasi di hot path:
 ## 4. Display strategy
 
 ```
-create key → server balas rawKey SEKALI → UI modal:
-   "Salin sekarang. Kunci ini tidak akan ditampilkan lagi."
+create key → server balas rawKey → UI modal:
+   "Salin sekarang, atau copy ulang kapan saja dari daftar key."
    [sk-mpruy-3f9aK2mQ...xyz]  [Copy]   [Selesai]
 
-setelah modal tutup → hanya tampil: sk-mpruy-ab12…cd34
+setelah modal tutup → daftar menampilkan: sk-mpruy-ab12…cd34  [Copy]
 ```
 
-Dashboard hanya menampilkan `prefix…last4`. Tidak ada endpoint untuk "lihat key lagi". Bila lupa → revoke & buat baru.
+Tombol **Copy** di setiap baris memanggil `POST /api/keys/:id/reveal`.
+Endpoint ini:
+
+- hanya bisa dipakai owner key (session login),
+- wajib CSRF token (double-submit),
+- mengembalikan `rawKey` dari `keyCiphertext` yang didekripsi server,
+- mengirim `Cache-Control: no-store` dan mencatat audit `apikey.reveal`,
+- dibatasi 30 reveal/menit per user.
+
+Key lama tanpa `keyCiphertext` mengembalikan `409 key_not_recoverable`; UI
+menyarankan revoke lalu buat key baru.
 
 ---
 
@@ -112,7 +131,7 @@ create ──▶ ACTIVE ──revoke──▶ REVOKED (terminal)
 | `DELETE /api/keys/:id` | set REVOKED + revokedAt, tidak dihapus (audit) |
 | otomatis | `expiresAt < now` → dianggap EXPIRED saat verifikasi |
 
-Multiple keys: **satu user boleh punya banyak key** (mis. per lingkungan: dev/staging/prod). Batas jumlah key per plan (mis. `free` 3; plan lain memakai default 3 sampai ditambahkan ke `MAX_KEYS`).
+Multiple keys: **satu user boleh punya banyak key** (mis. per lingkungan: dev/staging/prod), dengan batas **10 key aktif per user** untuk semua plan. Key yang sudah `REVOKED` tidak dihitung. Konstanta: `MAX_ACTIVE_KEYS_PER_USER` di `src/lib/key-policy.ts`.
 
 ---
 
@@ -158,10 +177,11 @@ async function createKey(userId: string, input: unknown) {
   const data = CreateKeySchema.parse(input);
   const user = await db.user.findUniqueOrThrow({ where: { id: userId }, include: { plan: true, apiKeys: true } });
 
-  // Batas jumlah key aktif per plan; plan tak terdaftar memakai DEFAULT_MAX_KEYS.
-  const DEFAULT_MAX_KEYS = 3;
-  const MAX_KEYS: Record<string, number> = { free: 3 };
-  if (user.apiKeys.filter((k) => k.status !== 'REVOKED').length >= (MAX_KEYS[user.plan.name] ?? DEFAULT_MAX_KEYS)) {
+  // Batas global: 10 key aktif per user (semua plan).
+  const activeKeys = await db.apiKey.count({
+    where: { userId, status: { not: 'REVOKED' } },
+  });
+  if (activeKeys >= MAX_ACTIVE_KEYS_PER_USER) {
     throw new ForbiddenError('key_limit_reached');
   }
 
@@ -184,6 +204,7 @@ async function createKey(userId: string, input: unknown) {
   const key = await db.apiKey.create({
     data: {
       userId, name: data.name, keyHash: hash,
+      keyCiphertext: encryptApiKey(raw),
       prefix: raw.slice(0, 12), last4: raw.slice(-4),
       scope: data.scope, allowedModels: data.scope === 'MODELS' ? data.models : [],
       rpmLimit: data.rpmLimit ?? null,
@@ -206,6 +227,7 @@ const publicKeyView = (k: any) => ({
   scope: k.scope, allowedModels: k.allowedModels, rpmLimit: k.rpmLimit,
   monthlyLimitIdr: k.monthlyLimitIdr, expiresAt: k.expiresAt,
   lastUsedAt: k.lastUsedAt, createdAt: k.createdAt,
+  recoverable: Boolean(k.keyCiphertext),
 });
 ```
 
@@ -228,7 +250,7 @@ await db.adminAuditLog.create({
 });
 ```
 
-Event yang dicatat: `apikey.create`, `apikey.revoke`, `apikey.update`, `apikey.expire`.
+Event yang dicatat: `apikey.create`, `apikey.reveal`, `apikey.revoke`, `apikey.update`, `apikey.expire`.
 
 ---
 
@@ -237,7 +259,8 @@ Event yang dicatat: `apikey.create`, `apikey.revoke`, `apikey.update`, `apikey.e
 | Kasus | Penanganan |
 |---|---|
 | **Collision hash** | astronomis kecil; saat create, bila `findUnique(keyHash)` ada → regenerate |
-| **User lupa key** | tidak bisa diambil; harus bulan baru key |
+| **User lupa key** | tombol Copy di dashboard memanggil reveal; bila key lama tanpa ciphertext → revoke & buat baru |
+| **Reveal setelah env crypto berubah** | dekripsi gagal → `409 key_not_recoverable`; revoke & buat baru, atau pulihkan env lama |
 | **Key bocor** | revoke; peringatkan user; lihat abuse detection [12](./12-RATE-LIMITING.md) |
 | **Key dipakai lintas IP mencurigakan** | log + alert + opsi auto-suspend (configurable) |
 | **User downgrade plan** | model di luar plan baru ditolak; key dengan allowedModels tetap cek plan |
@@ -259,6 +282,11 @@ Bila `API_KEY_PEPPER` perlu diganti (mis. kebocoran env):
 ```
 
 Konsekuensi: rotasi pepper butuh verifikasi ganda sementara. Dokumentasikan di runbook.
+
+> **Penting:** bila `API_KEY_ENCRYPTION_KEY` tidak diisi, ciphertext diturunkan
+> dari `API_KEY_PEPPER`. Rotasi pepper akan membuat ciphertext lama tidak bisa
+> didekripsi. Untuk produksi, isi `API_KEY_ENCRYPTION_KEY` terpisah dan jangan
+> dirotasi tanpa re-enkripsi `ApiKey.keyCiphertext`.
 
 ---
 

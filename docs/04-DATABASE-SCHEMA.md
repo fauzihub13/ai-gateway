@@ -110,6 +110,7 @@ Index: `email` (unique), `status`, `role`, `planExpiresAt` (dipakai dashboard ad
 | userId | String | FK → User, index | |
 | name | String | not null | label user |
 | keyHash | String | UNIQUE, not null | sha256(raw+pepper) |
+| keyCiphertext | String? | nullable | AES-256-GCM(raw); null untuk key lama yang tidak bisa dipulihkan |
 | prefix | String | not null | 12 char pertama (display) |
 | last4 | String | not null | 4 char terakhir |
 | scope | KeyScope | not null, default `FULL` | FULL / MODELS |
@@ -378,6 +379,9 @@ model ApiKey {
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   name            String
   keyHash         String    @unique
+  // Salinan terenkripsi (AES-256-GCM) untuk fitur copy ulang key.
+  // Null = key lama yang tidak bisa ditampilkan lagi.
+  keyCiphertext   String?
   prefix          String
   last4           String
   scope           KeyScope  @default(FULL)

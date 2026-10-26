@@ -2,15 +2,15 @@ import { z } from 'zod';
 import { db } from '@/lib/db';
 import { requireUser, assertCsrf } from '@/lib/auth';
 import { generateApiKey, hashApiKey, KEY_PREFIX } from '@/lib/apikey';
+import { encryptApiKey } from '@/lib/key-crypto';
+import { MAX_ACTIVE_KEYS_PER_USER } from '@/lib/key-policy';
 import { publicKeyView } from '@/lib/key-view';
 import { toErrorResponse, BadRequestError, ForbiddenError } from '@/lib/errors';
 import { getRequestId, json } from '@/lib/http';
 
 export const runtime = 'nodejs';
 
-// Batas jumlah key aktif per plan. Plan yang tidak terdaftar memakai DEFAULT_MAX_KEYS.
-const DEFAULT_MAX_KEYS = 3;
-const MAX_KEYS: Record<string, number> = { free: 3 };
+// Batas maksimum API key aktif per user ada di `src/lib/key-policy.ts`.
 
 const CreateSchema = z.object({
   name: z.string().min(1).max(50),
@@ -46,12 +46,16 @@ export async function POST(req: Request) {
     // tidak diturunkan otomatis — admin yang menurunkannya manual.
     const user = await db.user.findUniqueOrThrow({
       where: { id: s.sub },
-      include: { plan: true, apiKeys: true },
     });
 
-    const active = user.apiKeys.filter((k) => k.status !== 'REVOKED').length;
-    if (active >= (MAX_KEYS[user.plan.name] ?? DEFAULT_MAX_KEYS)) {
-      throw new ForbiddenError('key_limit_reached', 'Maximum number of active keys reached for your plan.');
+    const active = await db.apiKey.count({
+      where: { userId: user.id, status: { not: 'REVOKED' } },
+    });
+    if (active >= MAX_ACTIVE_KEYS_PER_USER) {
+      throw new ForbiddenError(
+        'key_limit_reached',
+        `Maximum number of active API keys reached (${MAX_ACTIVE_KEYS_PER_USER} per user). Revoke an old key first.`,
+      );
     }
 
     if (data.scope === 'MODELS') {
@@ -77,6 +81,7 @@ export async function POST(req: Request) {
         userId: user.id,
         name: data.name,
         keyHash: hash,
+        keyCiphertext: encryptApiKey(raw),
         prefix: raw.slice(0, KEY_PREFIX.length + 4),
         last4: raw.slice(-4),
         scope: data.scope,
