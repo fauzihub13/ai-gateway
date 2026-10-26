@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 /**
  * "Usage Wrapped" share card — merender kartu 1080×1350 (rasio 4:5) ke
@@ -13,13 +13,10 @@
  * sosial media tanpa latar tembus pandang.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useTheme } from 'next-themes';
-import { Check, Copy, Download, Loader2, Share2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { apiFetch } from '@/lib/client';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { apiFetch } from "@/lib/client";
 import {
   compactId,
   fullId,
@@ -28,17 +25,20 @@ import {
   RANGE_OPTIONS,
   rangeDays,
   type ShareRange,
-} from '@/lib/share-card-format';
+} from "@/lib/share-card-format";
+import { Check, Copy, Download, Loader2, Share2 } from "lucide-react";
+import { useTheme } from "next-themes";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 // ── Warna brand (selaras globals.css) ──────────────────────────────────────
 const C = {
-  electric: '#1E4DFF',
-  electricSoft: '#5D7FFF',
-  ink: '#0A0A0A',
-  paper: '#FBFBFB',
-  hairline: '#E5E7EB',
-  muted: '#6B7280',
-  white: '#FFFFFF',
+  electric: "#1E4DFF",
+  electricSoft: "#5D7FFF",
+  ink: "#0A0A0A",
+  paper: "#FBFBFB",
+  hairline: "#E5E7EB",
+  muted: "#6B7280",
+  white: "#FFFFFF",
 };
 
 /** Ukuran logis kartu; dirender 2x untuk ketajaman. */
@@ -80,7 +80,11 @@ function drawRoundedRect(
 }
 
 /** Potong teks dengan elipsis bila lebih lebar dari maxWidth. */
-function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+function fitText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+): string {
   if (ctx.measureText(text).width <= maxWidth) return text;
   let t = text;
   while (t.length > 1 && ctx.measureText(`${t}…`).width > maxWidth) {
@@ -107,9 +111,9 @@ function renderCard(
 ): void {
   const bg = dark ? C.ink : C.paper;
   const fg = dark ? C.white : C.ink;
-  const hairline = dark ? 'rgba(255,255,255,0.16)' : C.hairline;
-  const muted = dark ? 'rgba(255,255,255,0.55)' : C.muted;
-  const panel = dark ? 'rgba(255,255,255,0.04)' : C.white;
+  const hairline = dark ? "rgba(255,255,255,0.16)" : C.hairline;
+  const muted = dark ? "rgba(255,255,255,0.55)" : C.muted;
+  const panel = dark ? "rgba(255,255,255,0.04)" : C.white;
 
   // ── Background + blueprint grid ──
   ctx.fillStyle = bg;
@@ -139,7 +143,7 @@ function renderCard(
         ? "'JetBrains Mono', 'Departure Mono', ui-monospace, monospace"
         : "'Inter', ui-sans-serif, system-ui, sans-serif");
   };
-  const pct = (v: number): string => `${String(v).replace('.', ',')}%`;
+  const pct = (v: number): string => `${String(v).replace(".", ",")}%`;
 
   // ── Header ──
   setFont(500, 14, true);
@@ -152,12 +156,12 @@ function renderCard(
 
   setFont(700, 62);
   ctx.fillStyle = fg;
-  ctx.fillText('Mpruy AI', 72, 170);
+  ctx.fillText("Mpruy AI", 72, 170);
 
   // ── Hero: TOKEN DIPROSES (angka terbesar) — fill gradient electric ──
   setFont(600, 15, true);
   ctx.fillStyle = muted;
-  ctx.fillText('TOKEN DIPROSES', 72, 302);
+  ctx.fillText("TOKEN DIPROSES", 72, 302);
 
   const heroGrad = ctx.createLinearGradient(0, 336, 0, 436);
   heroGrad.addColorStop(0, C.electric);
@@ -179,26 +183,39 @@ function renderCard(
   const cardW = (W - 144 - 48) / 3; // 288
   const cardY = 540;
   const boxGrad = ctx.createLinearGradient(0, cardY, 0, cardY + 160);
-  boxGrad.addColorStop(0, dark ? 'rgba(30,77,255,0.16)' : 'rgba(30,77,255,0.10)');
-  boxGrad.addColorStop(1, dark ? 'rgba(30,77,255,0.02)' : 'rgba(30,77,255,0.015)');
+  boxGrad.addColorStop(
+    0,
+    dark ? "rgba(30,77,255,0.16)" : "rgba(30,77,255,0.10)",
+  );
+  boxGrad.addColorStop(
+    1,
+    dark ? "rgba(30,77,255,0.02)" : "rgba(30,77,255,0.015)",
+  );
 
-  const cards: Array<{ label: string; value: string; sub: string; glow: boolean }> = [
+  const cards: Array<{
+    label: string;
+    value: string;
+    sub: string;
+    glow: boolean;
+  }> = [
     {
-      label: 'TOTAL REQUEST',
+      label: "TOTAL REQUEST",
       value: fullId(data.requests),
-      sub: 'sepanjang periode',
+      sub: "sepanjang periode",
       glow: false,
     },
     {
-      label: 'CACHE HIT',
-      value: data.cachedHitPct == null ? '—' : pct(data.cachedHitPct),
+      label: "CACHE HIT",
+      value: data.cachedHitPct == null ? "—" : pct(data.cachedHitPct),
       sub: `${compactId(data.cachedPromptTokens)} dari cache`,
       glow: data.cachedHitPct != null && data.cachedHitPct > 0,
     },
     {
-      label: 'MODEL DIPAKAI',
+      label: "MODEL DIPAKAI",
       value: String(data.distinctModels),
-      sub: data.topModels[0] ? `favorit: ${data.topModels[0].name}` : 'belum ada pemakaian',
+      sub: data.topModels[0]
+        ? `favorit: ${data.topModels[0].name}`
+        : "belum ada pemakaian",
       glow: false,
     },
   ];
@@ -233,12 +250,12 @@ function renderCard(
   // ── Top 3 model dengan persentase bar ──
   setFont(600, 14, true);
   ctx.fillStyle = muted;
-  ctx.fillText('TOP MODEL', 72, 792);
+  ctx.fillText("TOP MODEL", 72, 792);
 
   if (data.topModels.length === 0) {
     setFont(400, 19);
     ctx.fillStyle = muted;
-    ctx.fillText('Belum ada pemakaian pada periode ini.', 72, 832);
+    ctx.fillText("Belum ada pemakaian pada periode ini.", 72, 832);
   } else {
     const rowH = 84;
     const barGrad = ctx.createLinearGradient(72, 0, W - 72, 0);
@@ -273,7 +290,7 @@ function renderCard(
   // ── Nilai pemakaian ──
   setFont(600, 14, true);
   ctx.fillStyle = muted;
-  ctx.fillText('NILAI PEMAKAIAN (HARGA RESMI)', 72, 1110);
+  ctx.fillText("NILAI PEMAKAIAN (HARGA RESMI)", 72, 1110);
   setFont(700, 44);
   ctx.fillStyle = fg;
   ctx.fillText(`Rp${fullId(data.valueIdr)}`, 72, 1160);
@@ -292,52 +309,53 @@ function renderCard(
 
   setFont(700, 22);
   ctx.fillStyle = fg;
-  ctx.fillText('Mpruy AI', 72, 1296);
-  const brandEnd = 72 + ctx.measureText('Mpruy AI').width + 18;
+  ctx.fillText("Mpruy AI", 72, 1296);
+  const brandEnd = 72 + ctx.measureText("Mpruy AI").width + 18;
   setFont(400, 15, true);
   ctx.fillStyle = muted;
   // Domain mulai setelah teks brand terukur — tanpa perkiraan lebar.
-  ctx.fillText('ai.mpruy.my.id', brandEnd, 1296);
+  ctx.fillText("mpruy.ai.id", brandEnd, 1296);
 }
-
 
 /** Muat logo sekali; resolve tetap dipanggil walau gagal (kartu tanpa glyph). */
 function loadLogo(dark: boolean): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
-    if (typeof window === 'undefined') return resolve(null);
+    if (typeof window === "undefined") return resolve(null);
     const img = new Image();
     img.onload = () => resolve(img);
     img.onerror = () => resolve(null);
-    img.src = dark ? '/mpruy-logo-white.png' : '/mpruy-logo-black.png';
+    img.src = dark ? "/mpruy-logo-white.png" : "/mpruy-logo-black.png";
   });
 }
 
 export function UsageShareCard({ email }: { email: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { resolvedTheme } = useTheme();
-  const dark = resolvedTheme === 'dark';
+  const dark = resolvedTheme === "dark";
 
   const [data, setData] = useState<CardData | null>(null);
-  const [range, setRange] = useState<ShareRange>('30');
+  const [range, setRange] = useState<ShareRange>("30");
   const [loading, setLoading] = useState(true);
   const [logo, setLogo] = useState<HTMLImageElement | null>(null);
   const [copied, setCopied] = useState(false);
   const [shared, setShared] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    setError('');
+    setError("");
     apiFetch(`/api/billing/share-card?days=${range}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('gagal memuat'))))
+      .then((r) =>
+        r.ok ? r.json() : Promise.reject(new Error("gagal memuat")),
+      )
       .then((d: CardData) => {
         if (!cancelled) setData(d);
       })
       .catch(() => {
         if (!cancelled) {
-          setError('Gagal memuat data kartu. Coba lagi.');
+          setError("Gagal memuat data kartu. Coba lagi.");
           setData(null);
         }
       })
@@ -362,7 +380,7 @@ export function UsageShareCard({ email }: { email: string }) {
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || !data) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
     renderCard(ctx, data, email, dark);
@@ -382,16 +400,18 @@ export function UsageShareCard({ email }: { email: string }) {
   const toBlob = useCallback(async (): Promise<Blob | null> => {
     const canvas = canvasRef.current;
     if (!canvas) return null;
-    return new Promise((resolve) => canvas.toBlob((b) => resolve(b), 'image/png'));
+    return new Promise((resolve) =>
+      canvas.toBlob((b) => resolve(b), "image/png"),
+    );
   }, []);
 
   async function download(): Promise<void> {
     const b = await toBlob();
     if (!b) return;
     const url = URL.createObjectURL(b);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = `mpruy-usage-${rangeDays(range) ?? 'all'}d-${new Date().toISOString().slice(0, 10)}.png`;
+    a.download = `mpruy-usage-${rangeDays(range) ?? "all"}d-${new Date().toISOString().slice(0, 10)}.png`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -400,22 +420,25 @@ export function UsageShareCard({ email }: { email: string }) {
     const b = await toBlob();
     if (!b) return;
     try {
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': b })]);
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": b })]);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      setError('Browser tidak mendukung salin gambar — pakai Unduh PNG.');
-      setTimeout(() => setError(''), 3000);
+      setError("Browser tidak mendukung salin gambar — pakai Unduh PNG.");
+      setTimeout(() => setError(""), 3000);
     }
   }
 
   async function share(): Promise<void> {
     const b = await toBlob();
     if (!b) return;
-    const file = new File([b], 'mpruy-usage.png', { type: 'image/png' });
+    const file = new File([b], "mpruy-usage.png", { type: "image/png" });
     if (navigator.canShare?.({ files: [file] })) {
       try {
-        await navigator.share({ files: [file], title: 'Mpruy AI — Usage Wrapped' });
+        await navigator.share({
+          files: [file],
+          title: "Mpruy AI — Usage Wrapped",
+        });
         setShared(true);
         setTimeout(() => setShared(false), 2000);
       } catch {
@@ -440,15 +463,27 @@ export function UsageShareCard({ email }: { email: string }) {
         </Tabs>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={copy} disabled={!data || loading}>
-            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-            {copied ? 'Tersalin' : 'Salin'}
+            {copied ? (
+              <Check className="h-4 w-4" />
+            ) : (
+              <Copy className="h-4 w-4" />
+            )}
+            {copied ? "Tersalin" : "Salin"}
           </Button>
           <Button variant="outline" onClick={share} disabled={!data || loading}>
-            {shared ? <Check className="h-4 w-4" /> : <Share2 className="h-4 w-4" />}
-            {shared ? 'Dibagikan' : 'Bagikan'}
+            {shared ? (
+              <Check className="h-4 w-4" />
+            ) : (
+              <Share2 className="h-4 w-4" />
+            )}
+            {shared ? "Dibagikan" : "Bagikan"}
           </Button>
           <Button onClick={download} disabled={!data || loading}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
             Unduh PNG
           </Button>
         </div>
@@ -480,7 +515,11 @@ export function UsageShareCard({ email }: { email: string }) {
               disabled={loading}
               className="absolute right-3 top-3 opacity-100 shadow-lift backdrop-blur transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
             >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
               Unduh
             </Button>
           </CardContent>

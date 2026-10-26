@@ -41,7 +41,7 @@ export interface OpenCodeModel {
 }
 
 export interface OpenCodeConfigArgs {
-  /** Platform origin, e.g. `https://api.mpruy.my.id` (no trailing slash needed). */
+  /** Platform origin, e.g. `https://mpruy.ai.id` (no trailing slash needed). */
   baseUrl: string;
   /** Models to add to the provider's `models` map. */
   models: OpenCodeModel[];
@@ -67,19 +67,22 @@ export interface OpenCodeConfigArgs {
   includeLimit?: boolean;
 }
 
-const SCHEMA = 'https://opencode.ai/config.json';
-const PACKAGE = '@opencode/ai/providers/openai-compatible';
-const PROVIDER_NAME = 'Mpruy AI';
+const SCHEMA = "https://opencode.ai/config.json";
+const PACKAGE = "@opencode/ai/providers/openai-compatible";
+const PROVIDER_NAME = "Mpruy AI";
 
 /** Thinking levels offered by default, low → max. */
-export const DEFAULT_THINKING_LEVELS = ['low', 'medium', 'high', 'max'];
+export const DEFAULT_THINKING_LEVELS = ["low", "medium", "high", "max"];
 
 /** Normalize the platform origin to the OpenAI-compatible `/v1` base. */
 export function apiBase(baseUrl: string): string {
-  return `${baseUrl.replace(/\/+$/, '')}/v1`;
+  return `${baseUrl.replace(/\/+$/, "")}/v1`;
 }
 
-function limitOf(m: OpenCodeModel, includeLimit: boolean): Record<string, number> | undefined {
+function limitOf(
+  m: OpenCodeModel,
+  includeLimit: boolean,
+): Record<string, number> | undefined {
   if (!includeLimit) return undefined;
   const limit: Record<string, number> = {};
   if (m.contextWindow) limit.context = m.contextWindow;
@@ -91,8 +94,8 @@ function limitOf(m: OpenCodeModel, includeLimit: boolean): Record<string, number
 function capabilitiesOf(m: OpenCodeModel): Record<string, unknown> {
   return {
     tools: m.tools === true,
-    input: m.vision ? ['text', 'image'] : ['text'],
-    output: ['text'],
+    input: m.vision ? ["text", "image"] : ["text"],
+    output: ["text"],
   };
 }
 
@@ -104,7 +107,10 @@ function thinkingLevels(m: OpenCodeModel): string[] {
 
 /** V2 `variants`: array of objects with an `id` + `settings`. */
 function v2Variants(m: OpenCodeModel): Array<Record<string, unknown>> {
-  return thinkingLevels(m).map((id) => ({ id, settings: { reasoningEffort: id } }));
+  return thinkingLevels(m).map((id) => ({
+    id,
+    settings: { reasoningEffort: id },
+  }));
 }
 
 /** V1 `variants`: object keyed by variant name. */
@@ -152,18 +158,26 @@ function modelsMap(
   ) => Record<string, unknown>,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const m of models) out[m.publicName] = entry(m, includeVariants, includeLimit);
+  for (const m of models)
+    out[m.publicName] = entry(m, includeVariants, includeLimit);
   return out;
 }
 
-function fallbackModels(models: OpenCodeModel[], defaultModel: string): OpenCodeModel[] {
-  return models.length ? models : [{ publicName: defaultModel, displayName: defaultModel }];
+function fallbackModels(
+  models: OpenCodeModel[],
+  defaultModel: string,
+): OpenCodeModel[] {
+  return models.length
+    ? models
+    : [{ publicName: defaultModel, displayName: defaultModel }];
 }
 
 /** Config V2 sebagai object — dipakai untuk render JSON tree interaktif. */
-export function buildOpenCodeV2Object(args: OpenCodeConfigArgs): Record<string, unknown> {
-  const providerId = args.providerId ?? 'mpruy';
-  const envVar = args.envVar ?? 'MPRUY_API_KEY';
+export function buildOpenCodeV2Object(
+  args: OpenCodeConfigArgs,
+): Record<string, unknown> {
+  const providerId = args.providerId ?? "mpruy";
+  const envVar = args.envVar ?? "MPRUY_API_KEY";
   const includeVariants = args.includeVariants ?? true;
   const includeLimit = args.includeLimit ?? true;
   const models = fallbackModels(args.models, args.defaultModel);
@@ -187,9 +201,11 @@ export function buildOpenCodeV2Object(args: OpenCodeConfigArgs): Record<string, 
 }
 
 /** Config V1 sebagai object — dipakai untuk render JSON tree interaktif. */
-export function buildOpenCodeV1Object(args: OpenCodeConfigArgs): Record<string, unknown> {
-  const providerId = args.providerId ?? 'mpruy';
-  const envVar = args.envVar ?? 'MPRUY_API_KEY';
+export function buildOpenCodeV1Object(
+  args: OpenCodeConfigArgs,
+): Record<string, unknown> {
+  const providerId = args.providerId ?? "mpruy";
+  const envVar = args.envVar ?? "MPRUY_API_KEY";
   const includeVariants = args.includeVariants ?? true;
   const includeLimit = args.includeLimit ?? true;
   const models = fallbackModels(args.models, args.defaultModel);
@@ -220,4 +236,4 @@ export function buildOpenCodeV1(args: OpenCodeConfigArgs): string {
 }
 
 /** Path hint shown to the user, per OpenCode docs. */
-export const OPENCODE_GLOBAL_CONFIG_PATH = '~/.config/opencode/opencode.jsonc';
+export const OPENCODE_GLOBAL_CONFIG_PATH = "~/.config/opencode/opencode.jsonc";
