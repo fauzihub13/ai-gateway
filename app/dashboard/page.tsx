@@ -148,17 +148,17 @@ export default function DashboardOverview() {
 
       {/* Observability: request terakhir, real dari DB via /api/billing/logs */}
       <Card className="mt-6">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
-          <div>
+        <CardHeader className="flex flex-col items-start gap-3 space-y-0 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
             <CardTitle className="flex items-center gap-2 text-base">
-              <Activity className="h-4 w-4" />
+              <Activity className="h-4 w-4 shrink-0" />
               Observability — request terakhir
             </CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">
               Diperbarui otomatis tiap 15 detik.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => loadLogs(true)} disabled={refreshing}>
               <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
               Refresh
@@ -166,7 +166,7 @@ export default function DashboardOverview() {
             <Button variant="outline" size="sm" asChild>
               <a href="/dashboard/usage">Lihat semua</a>
             </Button>
-            </div>
+          </div>
         </CardHeader>
         <CardContent>
           {logs === null ? (

@@ -151,12 +151,14 @@ export default function AdminUsagePage() {
 
       <Card className="mb-4">
         <div className="flex flex-col gap-4 p-4 lg:flex-row lg:flex-wrap lg:items-end">
-          <div className="space-y-2">
+          <div className="w-full space-y-2 lg:w-auto">
             <label className="text-xs font-medium text-muted-foreground">Rentang waktu</label>
             <Tabs value={preset} onValueChange={(v) => setPreset(v as Preset)}>
-              <TabsList>
+              {/* Mobile: list dibuat wrap full-width → preset turun ke baris berikutnya, tidak overflow.
+                  sm ke atas: kembali satu baris inline seperti semula. */}
+              <TabsList className="h-auto w-full flex-wrap justify-start gap-1 sm:h-10 sm:w-auto sm:flex-nowrap">
                 {PRESETS.map((p) => (
-                  <TabsTrigger key={p.value} value={p.value}>
+                  <TabsTrigger key={p.value} value={p.value} className="px-2.5 sm:px-3">
                     {p.label}
                   </TabsTrigger>
                 ))}
